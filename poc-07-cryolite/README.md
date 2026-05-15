@@ -78,6 +78,65 @@ Two host environments are supported from the same package:
    └───────────────────────────────────────────────────────────────────────┘
 ```
 
+### Cryolite wraps nuna-middleware on both sides
+
+Like `frost-engine-api` in poc-05, cryolite plays **both** roles around the
+middleware: it is the **producer** that feeds state in, and the **consumer**
+that takes state out. `nuna-middleware` is a pure transform sitting between
+the two ends — it never calls back into the host loop.
+
+```
+       ┌──────────────────────────────  CRYOLITE  ──────────────────────────────┐
+       │                                                                        │
+       │   ┌────────────────────┐                       ┌────────────────────┐  │
+       │   │  engine.cpp        │                       │  renderer.js       │  │
+       │   │  ─ Lua tick scripts│                       │  ─ three.js meshes │  │
+       │   │  ─ transform table │                       │  ─ camera + lights │  │
+       │   │   (PRODUCER)       │                       │   (CONSUMER)       │  │
+       │   └─────────┬──────────┘                       └─────────▲──────────┘  │
+       │             │                                            │             │
+       │             │ engine.getX/Y/Z, getScale*, getColor       │             │
+       │             │ ───── direct render path (every frame) ────┘             │
+       │             │                                                          │
+       │             │ engine state                                             │
+       │             ▼                                                          │
+       │   ┌──────────────────────────────────────────────────────────────┐     │
+       │   │                     nuna-middleware                          │     │
+       │   │   produce_frame_flat(t) → Float32Array(19)                   │     │
+       │   │   (PURE TRANSFORM — no callbacks into cryolite)              │     │
+       │   └────────────────────────────┬─────────────────────────────────┘     │
+       │                                │                                       │
+       │                                │ optional side path:                   │
+       │                                │ flat frame → external nuna consumers, │
+       │                                │ telemetry, alternate renderers, tests │
+       │                                ▼                                       │
+       │                       (off-engine observers)                           │
+       │                                                                        │
+       └────────────────────────────────────────────────────────────────────────┘
+
+         BEFORE middleware ────────►  middleware  ────────►  AFTER middleware
+         cryolite drives state          observes / flattens     cryolite (or
+         (engine.cpp + Lua)             one scene_frame at      anyone else)
+                                        a time                  reads the frame
+```
+
+Why this shape matters:
+
+- **Symmetric ends.** Both the input side (`engine.cpp`) and the output side
+  (`renderer.js`) live inside cryolite. Middleware is bracketed by cryolite,
+  not the other way around.
+- **Side-by-side ABIs, not a pipeline.** The wasm exports `engine_*` and
+  `nuna_middleware_*` independently. The render loop currently reads engine
+  transforms directly — middleware is a parallel observer that can be
+  consumed by any host that wants a flat scene_frame (tests, telemetry, a
+  second renderer).
+- **Drop-in for nuna hosts.** Because cryolite owns both ends, any nuna host
+  that already speaks `nuna_scene_frame_t` plugs in at the middle without
+  touching producer or consumer code.
+- **poc-05 parity.** In poc-05 (`frost-engine-api`) the engine produced AND
+  rendered with nothing in between. poc-07 keeps that closed loop and slips
+  middleware through the seam — the engine→renderer contract is unchanged.
+
 ## Public API
 
 ```js
