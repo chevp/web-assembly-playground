@@ -1,0 +1,13 @@
+{
+  "name": "cryolite-node-smoke",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Headless node smoke test for @chevp/cryolite.",
+  "scripts": {
+    "smoke": "node smoke.js"
+  },
+  "dependencies": {
+    "@chevp/cryolite": "file:../.."
+  }
+}

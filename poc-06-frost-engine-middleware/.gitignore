@@ -1,0 +1,6 @@
+vendor/lua-*/
+vendor/tinyxml2-*/
+web/engine.mjs
+web/engine.wasm
+web/engine.data
+.DS_Store

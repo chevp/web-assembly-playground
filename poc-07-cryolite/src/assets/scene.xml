@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<synth version="1.0">
+<scene id="orbital-system">
+
+    <entity id="center" x="400" y="300" size="30" color="#ffe66d">
+        <script uri="file:///assets/pulse.tick.lua"/>
+    </entity>
+
+    <entity id="orbiter-1" x="400" y="300" size="20" color="#ff6b6b">
+        <script uri="file:///assets/orbiter.tick.lua"/>
+    </entity>
+
+    <entity id="orbiter-2" x="400" y="300" size="14" color="#4ecdc4">
+        <script uri="file:///assets/orbiter.tick.lua"/>
+    </entity>
+
+    <entity id="orbiter-3" x="400" y="300" size="10" color="#a78bfa">
+        <script uri="file:///assets/orbiter.tick.lua"/>
+    </entity>
+
+</scene>
+</synth>

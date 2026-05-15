@@ -1,0 +1,6 @@
+[submodule "poc-06-frost-engine-middleware/vendor/nuna-middleware"]
+	path = poc-06-frost-engine-middleware/vendor/nuna-middleware
+	url = https://github.com/chevp/nuna-middleware.git
+[submodule "poc-07-cryolite/vendor/nuna-middleware"]
+	path = poc-07-cryolite/vendor/nuna-middleware
+	url = https://github.com/chevp/nuna-middleware.git

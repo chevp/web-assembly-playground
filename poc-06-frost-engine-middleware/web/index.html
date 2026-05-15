@@ -1,0 +1,149 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>poc-06-frost-engine-middleware</title>
+<style>
+  body { margin: 0; background: #1a1a1a; color: #ddd; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  #wrap { display: flex; flex-direction: column; align-items: center; padding: 20px; gap: 12px; }
+  h1 { font-size: 14px; font-weight: 500; color: #aaa; margin: 0; }
+  #canvas { display: block; width: 800px; height: 600px; background: #0e1116; border: 1px solid #333; }
+  #log { width: 800px; height: 140px; overflow: auto; background: #0e1116; border: 1px solid #333; padding: 8px; font-size: 12px; white-space: pre-wrap; margin: 0; }
+  #hud { width: 800px; font-size: 12px; color: #889; display: flex; justify-content: space-between; }
+</style>
+<div id="wrap">
+  <h1>poc-06 &mdash; frost-engine-api + nuna-middleware (three.js viewer)</h1>
+  <canvas id="canvas" width="800" height="600"></canvas>
+  <div id="hud"><span id="version">…</span><span id="frame">…</span></div>
+  <pre id="log">loading…</pre>
+</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.165.0/build/three.module.js"
+  }
+}
+</script>
+<script type="module">
+  import * as THREE from "three";
+  import Module from "./engine.mjs";
+
+  const logEl = document.getElementById("log");
+  const logLines = [];
+  function log(s) {
+    logLines.push(s);
+    if (logLines.length > 60) logLines.shift();
+    logEl.textContent = logLines.join("\n");
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  const m = await Module({ print: log, printErr: log });
+
+  // --- frost-engine-api surface (Lua/XML orchestration) ---
+  const init     = m.cwrap("engine_init",             "number", ["string"]);
+  const tick     = m.cwrap("engine_tick",             null,     ["number"]);
+  const count    = m.cwrap("engine_get_entity_count", "number", []);
+  const getId    = m.cwrap("engine_get_entity_id",    "string", ["number"]);
+  const getX     = m.cwrap("engine_get_entity_x",     "number", ["number"]);
+  const getY     = m.cwrap("engine_get_entity_y",     "number", ["number"]);
+  const getSize  = m.cwrap("engine_get_entity_size",  "number", ["number"]);
+  const getColor = m.cwrap("engine_get_entity_color", "string", ["number"]);
+
+  // --- nuna-middleware surface (ADR-029 every-frame compute) ---
+  const FRAME_FLOATS = 19;
+  const middlewareVersion = m.UTF8ToString(m._nuna_middleware_version());
+  const framePtr = m._malloc(FRAME_FLOATS * 4);
+  const frameView = new Float32Array(m.HEAPF32.buffer, framePtr, FRAME_FLOATS);
+
+  document.getElementById("version").textContent =
+    `nuna-middleware ${middlewareVersion} · frost-engine-api (three.js renderer)`;
+
+  const n = init("/assets/runtime.xml");
+  if (n < 0) { log("init failed"); throw new Error("engine_init failed"); }
+  log(`engine_init -> ${n} entities`);
+
+  // --- three.js setup ---
+  const canvas = document.getElementById("canvas");
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
+  renderer.setClearColor(0x0e1116, 1);
+
+  // Orthographic camera matching the 800x600 logical space the Lua scripts
+  // assume (cx=400, cy=300). Y is flipped so positive y is downward, same
+  // as Canvas2D in poc-05.
+  const W = 800, H = 600;
+  const camera = new THREE.OrthographicCamera(0, W, 0, H, -10, 10);
+
+  const scene = new THREE.Scene();
+
+  // One mesh per entity. Pre-allocated; never recreated.
+  const entities = [];
+  for (let i = 0; i < n; i++) {
+    const geom = new THREE.CircleGeometry(1, 32);
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const mesh = new THREE.Mesh(geom, mat);
+    scene.add(mesh);
+    entities.push({ mesh, mat });
+  }
+
+  // Middleware triangle: separate small overlay in screen-space corner.
+  // Reuses the 19-float scene_frame produced by nuna-middleware.
+  const triPositions = new Float32Array(9);
+  const triColors = new Float32Array(9);
+  const triGeom = new THREE.BufferGeometry();
+  triGeom.setAttribute("position", new THREE.BufferAttribute(triPositions, 3));
+  triGeom.setAttribute("color", new THREE.BufferAttribute(triColors, 3));
+  const triMesh = new THREE.Mesh(triGeom, new THREE.MeshBasicMaterial({ vertexColors: true }));
+  scene.add(triMesh);
+
+  // Overlay triangle into a small "minimap" area at top-right of the
+  // logical 800x600 space (110x110 box, 10px from edges).
+  const OVERLAY = { x: W - 120, y: 10, w: 110, h: 110 };
+
+  const frameEl = document.getElementById("frame");
+  let last = performance.now();
+  let frameNo = 0;
+
+  function frame(now) {
+    const dt = Math.min((now - last) / 1000, 0.1);
+    last = now;
+    frameNo++;
+
+    // 1) tick the frost orchestration layer
+    tick(dt);
+
+    // 2) pull the nuna-middleware scene_frame (independent of the frost layer)
+    const tSec = (now - performance.timeOrigin) / 1000;
+    m._nuna_middleware_produce_frame_flat(tSec, framePtr);
+
+    // 3) frost entities → three.js meshes
+    const c = count();
+    for (let i = 0; i < c; i++) {
+      const e = entities[i];
+      const r = getSize(i);
+      e.mesh.position.set(getX(i), getY(i), 0);
+      e.mesh.scale.setScalar(r);
+      e.mat.color.set(getColor(i));
+    }
+
+    // 4) middleware triangle (NDC [-1,1] → overlay box in 800x600 space)
+    for (let i = 0; i < 3; i++) {
+      const o = 4 + i * 5;
+      const nx = frameView[o    ];
+      const ny = frameView[o + 1];
+      triPositions[i*3+0] = OVERLAY.x + ((nx + 1) * 0.5) * OVERLAY.w;
+      triPositions[i*3+1] = OVERLAY.y + ((1 - ny) * 0.5) * OVERLAY.h;
+      triPositions[i*3+2] = 0;
+      triColors[i*3+0] = frameView[o + 2];
+      triColors[i*3+1] = frameView[o + 3];
+      triColors[i*3+2] = frameView[o + 4];
+    }
+    triGeom.attributes.position.needsUpdate = true;
+    triGeom.attributes.color.needsUpdate = true;
+
+    if ((frameNo & 31) === 0) frameEl.textContent = `frame #${frameNo} · ${(1/dt).toFixed(0)} fps`;
+
+    renderer.render(scene, camera);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+</script>

@@ -1,0 +1,7 @@
+node_modules/
+vendor/lua-*/
+vendor/tinyxml2-*/
+lib/engine.mjs
+lib/engine.wasm
+lib/engine.data
+.DS_Store
