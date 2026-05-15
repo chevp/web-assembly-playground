@@ -1,0 +1,10 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>poc-01-java</title>
+<pre id="out">loading…</pre>
+<script type="module">
+  import { load } from "./classes.wasm-runtime.js";
+  const teavm = await load("./classes.wasm");
+  const result = teavm.exports["playground.Hello.add"](2, 3);
+  document.getElementById("out").textContent = `add(2, 3) = ${result}`;
+</script>

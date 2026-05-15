@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    WASM Frost Showcase - Canvas2D Runtime Configuration
+
+    Mirrors the structure of nuna/nuna's runtime-*.xml. The renderer here is
+    Canvas2D (no Vulkan), but the orchestration model is identical: declare
+    a scene URI plus optional scene-scope Lua scripts; the engine wires the
+    rest from XML + Lua alone.
+-->
+<synth version="1.0" author="chevp">
+<runtimeRenderer version="1.0">
+
+    <metadata>
+        <name>WASM Frost Showcase</name>
+        <client>web-assembly-playground</client>
+        <platform>web</platform>
+    </metadata>
+
+    <renderer>
+        <api type="canvas2d"/>
+        <window width="800" height="600"/>
+    </renderer>
+
+    <scene uri="file:///assets/scene.xml"/>
+
+    <scripts>
+        <script uri="file:///assets/scene.script.lua" scope="scene"/>
+    </scripts>
+
+</runtimeRenderer>
+</synth>

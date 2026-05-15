@@ -1,0 +1,4 @@
+vendor/
+web/engine.mjs
+web/engine.wasm
+web/engine.data

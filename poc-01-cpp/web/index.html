@@ -1,0 +1,10 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>poc-01-cpp</title>
+<pre id="out">loading…</pre>
+<script type="module">
+  import Module from "./hello.mjs";
+  const m = await Module();
+  const add = m.cwrap("add", "number", ["number", "number"]);
+  document.getElementById("out").textContent = `add(2, 3) = ${add(2, 3)}`;
+</script>

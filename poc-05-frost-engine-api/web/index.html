@@ -1,0 +1,68 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>poc-05-frost-engine-api</title>
+<style>
+  body { margin: 0; background: #1a1a1a; color: #ddd; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  #wrap { display: flex; flex-direction: column; align-items: center; padding: 20px; gap: 12px; }
+  h1 { font-size: 14px; font-weight: 500; color: #aaa; margin: 0; }
+  canvas { background: #0e1116; border: 1px solid #333; }
+  #log { width: 800px; height: 140px; overflow: auto; background: #0e1116; border: 1px solid #333; padding: 8px; font-size: 12px; white-space: pre-wrap; margin: 0; }
+</style>
+<div id="wrap">
+  <h1>poc-05-frost-engine-api &mdash; C++ engine, XML scene + Lua scripts, Canvas2D (no Vulkan)</h1>
+  <canvas id="canvas" width="800" height="600"></canvas>
+  <pre id="log">loading…</pre>
+</div>
+<script type="module">
+  import Module from "./engine.mjs";
+
+  const logEl = document.getElementById("log");
+  const logLines = [];
+  function log(s) {
+    logLines.push(s);
+    if (logLines.length > 60) logLines.shift();
+    logEl.textContent = logLines.join("\n");
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  const m = await Module({ print: log, printErr: log });
+
+  const init     = m.cwrap("engine_init",             "number", ["string"]);
+  const tick     = m.cwrap("engine_tick",             null,     ["number"]);
+  const count    = m.cwrap("engine_get_entity_count", "number", []);
+  const getId    = m.cwrap("engine_get_entity_id",    "string", ["number"]);
+  const getX     = m.cwrap("engine_get_entity_x",     "number", ["number"]);
+  const getY     = m.cwrap("engine_get_entity_y",     "number", ["number"]);
+  const getSize  = m.cwrap("engine_get_entity_size",  "number", ["number"]);
+  const getColor = m.cwrap("engine_get_entity_color", "string", ["number"]);
+
+  const n = init("/assets/runtime.xml");
+  if (n < 0) { log("init failed"); throw new Error("engine_init failed"); }
+  log(`engine_init -> ${n} entities`);
+
+  const canvas = document.getElementById("canvas");
+  const ctx = canvas.getContext("2d");
+  let last = performance.now();
+
+  function frame(now) {
+    const dt = Math.min((now - last) / 1000, 0.1);
+    last = now;
+    tick(dt);
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const c = count();
+    for (let i = 0; i < c; i++) {
+      const x = getX(i), y = getY(i), r = getSize(i);
+      ctx.fillStyle = getColor(i);
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#888";
+      ctx.font = "11px ui-monospace, monospace";
+      ctx.fillText(getId(i), x + r + 4, y + 4);
+    }
+
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+</script>

@@ -1,0 +1,9 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>poc-01-rust</title>
+<pre id="out">loading…</pre>
+<script type="module">
+  import init, { add } from "./pkg/poc_01_rust.js";
+  await init();
+  document.getElementById("out").textContent = `add(2, 3) = ${add(2, 3)}`;
+</script>
