@@ -1,27 +1,22 @@
 // poc-06-frost-engine-middleware
 //
-// Same orchestration model as poc-05 (XML scene + per-entity Lua tick
-// scripts driving an engine through a small `frost.*` Lua global), but
-// the C++ runtime statically links nuna-middleware (vendored as a git
-// submodule under vendor/nuna-middleware) and re-exports its public C
-// ABI. The renderer this time is three.js in the browser, fed by the
-// same JS-side read-back of (x, y, size, color) plus the middleware's
-// 19-float scene_frame triangle for parity with nuna-middleware's own
-// WASM smoke test.
+// WASM runtime: per-entity Lua state + scene transform table. No XML
+// parsing inside the wasm — JS parses .cryo + synth-xml + components,
+// then uploads entities and Lua tick scripts through the C ABI below.
 //
-// The point of the POC is to show that the Lua/XML orchestration story
-// (poc-05) and the ADR-029 every-frame compute story (nuna-middleware)
-// are independent layers and can coexist in a single WASM module
-// without either knowing about the other.
+// Side-by-side with nuna-middleware: both ABIs are exported from the
+// same wasm. The two layers do not call each other; the renderer pulls
+// engine transforms each frame and middleware's flat scene_frame each
+// frame as independent data sources.
 
 #include <emscripten/emscripten.h>
 
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
-#include "tinyxml2.h"
 #include "nuna/middleware/middleware.h"
 
 extern "C" {
@@ -30,34 +25,26 @@ extern "C" {
 #include "lualib.h"
 }
 
-using namespace tinyxml2;
+struct Vec3 {
+    float x = 0, y = 0, z = 0;
+};
 
 struct Entity {
     std::string id;
-    float x = 0, y = 0;
-    float size = 20;
+    Vec3 position;
+    Vec3 scale{1, 1, 1};
     std::string color = "#ffffff";
-    std::string scriptPath;
+    std::unordered_map<std::string, double> props;
     lua_State* L = nullptr;
 };
 
 static std::vector<Entity> g_entities;
-static lua_State* g_sceneL = nullptr;
-static std::string g_sceneId;
+static std::unordered_map<std::string, size_t> g_index;
 static float g_time = 0.0f;
 
 static Entity* findEntity(const std::string& id) {
-    for (auto& e : g_entities)
-        if (e.id == id) return &e;
-    return nullptr;
-}
-
-static std::string stripFileUri(const char* uri) {
-    if (!uri) return "";
-    std::string s = uri;
-    const std::string prefix = "file://";
-    if (s.rfind(prefix, 0) == 0) s.erase(0, prefix.size());
-    return s;
+    auto it = g_index.find(id);
+    return (it == g_index.end()) ? nullptr : &g_entities[it->second];
 }
 
 // ---------------- frost.* Lua bindings ----------------
@@ -74,33 +61,44 @@ static int l_getTime(lua_State* L) {
 }
 
 static int l_getPosition(lua_State* L) {
-    const char* id = luaL_checkstring(L, 1);
-    Entity* e = findEntity(id);
+    Entity* e = findEntity(luaL_checkstring(L, 1));
     if (!e) {
-        lua_pushnumber(L, 0);
-        lua_pushnumber(L, 0);
-        return 2;
+        lua_pushnumber(L, 0); lua_pushnumber(L, 0); lua_pushnumber(L, 0);
+        return 3;
     }
-    lua_pushnumber(L, e->x);
-    lua_pushnumber(L, e->y);
-    return 2;
+    lua_pushnumber(L, e->position.x);
+    lua_pushnumber(L, e->position.y);
+    lua_pushnumber(L, e->position.z);
+    return 3;
 }
 
 static int l_setPosition(lua_State* L) {
     const char* id = luaL_checkstring(L, 1);
     float x = (float)luaL_checknumber(L, 2);
     float y = (float)luaL_checknumber(L, 3);
-    if (Entity* e = findEntity(id)) {
-        e->x = x;
-        e->y = y;
-    }
+    float z = (float)luaL_checknumber(L, 4);
+    if (Entity* e = findEntity(id)) e->position = {x, y, z};
     return 0;
 }
 
-static int l_setSize(lua_State* L) {
+static int l_getScale(lua_State* L) {
+    Entity* e = findEntity(luaL_checkstring(L, 1));
+    if (!e) {
+        lua_pushnumber(L, 1); lua_pushnumber(L, 1); lua_pushnumber(L, 1);
+        return 3;
+    }
+    lua_pushnumber(L, e->scale.x);
+    lua_pushnumber(L, e->scale.y);
+    lua_pushnumber(L, e->scale.z);
+    return 3;
+}
+
+static int l_setScale(lua_State* L) {
     const char* id = luaL_checkstring(L, 1);
-    float n = (float)luaL_checknumber(L, 2);
-    if (Entity* e = findEntity(id)) e->size = n;
+    float x = (float)luaL_checknumber(L, 2);
+    float y = (float)luaL_checknumber(L, 3);
+    float z = (float)luaL_checknumber(L, 4);
+    if (Entity* e = findEntity(id)) e->scale = {x, y, z};
     return 0;
 }
 
@@ -111,179 +109,155 @@ static int l_setColor(lua_State* L) {
     return 0;
 }
 
-static void registerFrost(lua_State* L, const std::string& selfId) {
+static void pushPropsTable(lua_State* L, const Entity& e) {
+    lua_newtable(L);
+    for (const auto& kv : e.props) {
+        lua_pushnumber(L, kv.second);
+        lua_setfield(L, -2, kv.first.c_str());
+    }
+}
+
+static void registerFrost(lua_State* L, const Entity& self) {
     lua_newtable(L);
     lua_pushcfunction(L, l_log);         lua_setfield(L, -2, "log");
     lua_pushcfunction(L, l_getTime);     lua_setfield(L, -2, "getTime");
     lua_pushcfunction(L, l_getPosition); lua_setfield(L, -2, "getPosition");
     lua_pushcfunction(L, l_setPosition); lua_setfield(L, -2, "setPosition");
-    lua_pushcfunction(L, l_setSize);     lua_setfield(L, -2, "setSize");
+    lua_pushcfunction(L, l_getScale);    lua_setfield(L, -2, "getScale");
+    lua_pushcfunction(L, l_setScale);    lua_setfield(L, -2, "setScale");
     lua_pushcfunction(L, l_setColor);    lua_setfield(L, -2, "setColor");
 
+    // frost.self = { id = "...", props = { … } }
     lua_newtable(L);
-    lua_pushstring(L, selfId.c_str());
+    lua_pushstring(L, self.id.c_str());
     lua_setfield(L, -2, "id");
+    pushPropsTable(L, self);
+    lua_setfield(L, -2, "props");
     lua_setfield(L, -2, "self");
 
     lua_setglobal(L, "frost");
 }
 
-static lua_State* makeLuaState(const std::string& selfId, const std::string& scriptPath) {
-    lua_State* L = luaL_newstate();
-    luaL_openlibs(L);
-    registerFrost(L, selfId);
-    if (!scriptPath.empty()) {
-        if (luaL_dofile(L, scriptPath.c_str()) != LUA_OK) {
-            fprintf(stderr, "lua load error (%s): %s\n", scriptPath.c_str(), lua_tostring(L, -1));
-            lua_pop(L, 1);
-        }
-    }
-    return L;
-}
-
 static void callIfFunction(lua_State* L, const char* name, float dt, bool passDt) {
     lua_getglobal(L, name);
-    if (!lua_isfunction(L, -1)) {
-        lua_pop(L, 1);
-        return;
-    }
+    if (!lua_isfunction(L, -1)) { lua_pop(L, 1); return; }
     int argc = 0;
-    if (passDt) {
-        lua_pushnumber(L, dt);
-        argc = 1;
-    }
+    if (passDt) { lua_pushnumber(L, dt); argc = 1; }
     if (lua_pcall(L, argc, 0, 0) != LUA_OK) {
         fprintf(stderr, "lua %s error: %s\n", name, lua_tostring(L, -1));
         lua_pop(L, 1);
     }
 }
 
-// ---------------- XML loading ----------------
-
-static bool loadScene(const std::string& scenePath) {
-    XMLDocument doc;
-    if (doc.LoadFile(scenePath.c_str()) != XML_SUCCESS) {
-        fprintf(stderr, "failed to load scene: %s\n", scenePath.c_str());
-        return false;
-    }
-    XMLElement* root = doc.RootElement();
-    if (!root) return false;
-
-    XMLElement* scene = root->FirstChildElement("scene");
-    if (!scene) {
-        fprintf(stderr, "scene.xml has no <scene> element\n");
-        return false;
-    }
-    if (const char* id = scene->Attribute("id")) g_sceneId = id;
-
-    for (XMLElement* ent = scene->FirstChildElement("entity"); ent;
-         ent = ent->NextSiblingElement("entity")) {
-        Entity e;
-        if (const char* id = ent->Attribute("id")) e.id = id;
-        ent->QueryFloatAttribute("x", &e.x);
-        ent->QueryFloatAttribute("y", &e.y);
-        ent->QueryFloatAttribute("size", &e.size);
-        if (const char* c = ent->Attribute("color")) e.color = c;
-        if (XMLElement* s = ent->FirstChildElement("script"))
-            e.scriptPath = stripFileUri(s->Attribute("uri"));
-        g_entities.push_back(std::move(e));
-    }
-    return true;
-}
-
-static bool loadRuntime(const std::string& runtimePath, std::string& outScene,
-                        std::string& outSceneScript) {
-    XMLDocument doc;
-    if (doc.LoadFile(runtimePath.c_str()) != XML_SUCCESS) {
-        fprintf(stderr, "failed to load runtime: %s\n", runtimePath.c_str());
-        return false;
-    }
-    XMLElement* root = doc.RootElement();
-    if (!root) return false;
-
-    XMLElement* renderer = root->FirstChildElement("runtimeRenderer");
-    if (!renderer) renderer = root;
-
-    if (XMLElement* s = renderer->FirstChildElement("scene"))
-        outScene = stripFileUri(s->Attribute("uri"));
-
-    if (XMLElement* scripts = renderer->FirstChildElement("scripts")) {
-        for (XMLElement* s = scripts->FirstChildElement("script"); s;
-             s = s->NextSiblingElement("script")) {
-            const char* scope = s->Attribute("scope");
-            if (scope && std::string(scope) == "scene") {
-                outSceneScript = stripFileUri(s->Attribute("uri"));
-                break;
-            }
-        }
-    }
-    return true;
-}
-
-// ---------------- C API exposed to JS ----------------
+// ---------------- C ABI exposed to JS ----------------
 
 extern "C" {
 
 EMSCRIPTEN_KEEPALIVE
-int engine_init(const char* runtimePath) {
+void engine_init(void) {
+    for (auto& e : g_entities) if (e.L) lua_close(e.L);
     g_entities.clear();
+    g_index.clear();
     g_time = 0;
+}
 
-    std::string scenePath, sceneScriptPath;
-    if (!loadRuntime(runtimePath, scenePath, sceneScriptPath)) return -1;
-    if (scenePath.empty()) {
-        fprintf(stderr, "runtime.xml did not declare a <scene>\n");
-        return -1;
+EMSCRIPTEN_KEEPALIVE
+int engine_add_entity(const char* id) {
+    if (!id || g_index.count(id)) return -1;
+    Entity e;
+    e.id = id;
+    g_entities.push_back(std::move(e));
+    g_index[id] = g_entities.size() - 1;
+    return (int)(g_entities.size() - 1);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void engine_set_position(const char* id, float x, float y, float z) {
+    if (Entity* e = findEntity(id)) e->position = {x, y, z};
+}
+
+EMSCRIPTEN_KEEPALIVE
+void engine_set_scale(const char* id, float sx, float sy, float sz) {
+    if (Entity* e = findEntity(id)) e->scale = {sx, sy, sz};
+}
+
+EMSCRIPTEN_KEEPALIVE
+void engine_set_color(const char* id, const char* hex) {
+    if (Entity* e = findEntity(id)) e->color = hex ? hex : "#ffffff";
+}
+
+EMSCRIPTEN_KEEPALIVE
+void engine_set_property(const char* id, const char* name, double value) {
+    if (Entity* e = findEntity(id)) e->props[name] = value;
+}
+
+EMSCRIPTEN_KEEPALIVE
+int engine_attach_script(const char* id, const char* lua_source) {
+    Entity* e = findEntity(id);
+    if (!e) return -1;
+    if (e->L) lua_close(e->L);
+    e->L = luaL_newstate();
+    luaL_openlibs(e->L);
+    registerFrost(e->L, *e);
+    if (lua_source && *lua_source) {
+        if (luaL_dostring(e->L, lua_source) != LUA_OK) {
+            fprintf(stderr, "lua load (%s): %s\n", id, lua_tostring(e->L, -1));
+            lua_pop(e->L, 1);
+            return -2;
+        }
+        callIfFunction(e->L, "onLoad", 0, false);
     }
-    if (!loadScene(scenePath)) return -1;
-
-    for (auto& e : g_entities) e.L = makeLuaState(e.id, e.scriptPath);
-    for (auto& e : g_entities) callIfFunction(e.L, "onLoad", 0, false);
-
-    if (!sceneScriptPath.empty()) {
-        g_sceneL = makeLuaState(g_sceneId, sceneScriptPath);
-        callIfFunction(g_sceneL, "onLoad", 0, false);
-    }
-    return (int)g_entities.size();
+    return 0;
 }
 
 EMSCRIPTEN_KEEPALIVE
 void engine_tick(float dt) {
     g_time += dt;
-    if (g_sceneL) callIfFunction(g_sceneL, "onUpdate", dt, true);
     for (auto& e : g_entities)
         if (e.L) callIfFunction(e.L, "onUpdate", dt, true);
 }
 
 EMSCRIPTEN_KEEPALIVE
-int engine_get_entity_count() {
-    return (int)g_entities.size();
-}
+int engine_get_entity_count(void) { return (int)g_entities.size(); }
 
 EMSCRIPTEN_KEEPALIVE
 const char* engine_get_entity_id(int i) {
-    if (i < 0 || i >= (int)g_entities.size()) return "";
-    return g_entities[i].id.c_str();
+    return (i >= 0 && (size_t)i < g_entities.size()) ? g_entities[i].id.c_str() : "";
 }
 
 EMSCRIPTEN_KEEPALIVE
 float engine_get_entity_x(int i) {
-    return (i >= 0 && i < (int)g_entities.size()) ? g_entities[i].x : 0;
+    return (i >= 0 && (size_t)i < g_entities.size()) ? g_entities[i].position.x : 0;
 }
 
 EMSCRIPTEN_KEEPALIVE
 float engine_get_entity_y(int i) {
-    return (i >= 0 && i < (int)g_entities.size()) ? g_entities[i].y : 0;
+    return (i >= 0 && (size_t)i < g_entities.size()) ? g_entities[i].position.y : 0;
 }
 
 EMSCRIPTEN_KEEPALIVE
-float engine_get_entity_size(int i) {
-    return (i >= 0 && i < (int)g_entities.size()) ? g_entities[i].size : 0;
+float engine_get_entity_z(int i) {
+    return (i >= 0 && (size_t)i < g_entities.size()) ? g_entities[i].position.z : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE
+float engine_get_entity_scale_x(int i) {
+    return (i >= 0 && (size_t)i < g_entities.size()) ? g_entities[i].scale.x : 1;
+}
+
+EMSCRIPTEN_KEEPALIVE
+float engine_get_entity_scale_y(int i) {
+    return (i >= 0 && (size_t)i < g_entities.size()) ? g_entities[i].scale.y : 1;
+}
+
+EMSCRIPTEN_KEEPALIVE
+float engine_get_entity_scale_z(int i) {
+    return (i >= 0 && (size_t)i < g_entities.size()) ? g_entities[i].scale.z : 1;
 }
 
 EMSCRIPTEN_KEEPALIVE
 const char* engine_get_entity_color(int i) {
-    return (i >= 0 && i < (int)g_entities.size()) ? g_entities[i].color.c_str() : "";
+    return (i >= 0 && (size_t)i < g_entities.size()) ? g_entities[i].color.c_str() : "#ffffff";
 }
 
 }  // extern "C"

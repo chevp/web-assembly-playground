@@ -1,57 +1,91 @@
-# poc-06-frost-engine-middleware — frost-engine-api + nuna-middleware, three.js viewer
+# poc-06-frost-engine-middleware — `.cryo` + synth-xml + Lua + three.js
 
-Same Lua/XML orchestration model as
-[poc-05-frost-engine-api](../poc-05-frost-engine-api), but the C++
-runtime now also statically links **nuna-middleware** (vendored as a git
-submodule under `vendor/nuna-middleware`), and the browser shell uses
-**three.js** instead of Canvas2D.
+Pure web renderer that stitches the four layers of the Frost / nuna
+runtime model together:
 
 ```
-runtime.xml  ──┐
-scene.xml    ──┼─→  C++ engine.cpp ──┐
-*.tick.lua   ──┘    (Lua 5.4)        │
-                                     ├─→  single .wasm  ─→  three.js scene
-                  nuna-middleware ───┘     (engine_*  +
-                  (vendor submodule)        nuna_middleware_*)
+   project.cryo           ─►  cryolite-style manifest parser (JS)
+        │
+        ▼
+   runtime.frost          ─►  picks renderer api + scene uri
+        │
+        ▼
+   scene.synth.xml        ─►  synth-xml parser (browser DOMParser)
+   + component.synth.xml      with componentRef composition
+        │
+        ▼
+   *.tick.lua sources     ─►  uploaded to engine.wasm (Lua 5.4)
+        │
+        ▼
+   engine_tick(dt)        ─►  per-entity Lua runs, mutates transforms
+        │
+        ▼
+   transforms flat table  ─►  three.js (frost-engine-api implementation)
 ```
 
-## Why this POC exists
+The wasm module owns **scene state + Lua execution** only. XML parsing
+lives in JS where it belongs; rendering is three.js. Engine and
+renderer talk through a per-entity transform table.
 
-poc-05 showed that the `frost.*` Lua surface really is the boundary
-between the engine and its renderer (retargeted Vulkan → Canvas2D
-without touching XML/Lua). poc-06 adds two more independent
-demonstrations:
+`nuna-middleware` is linked into the **same wasm** and exposes its
+ABI side-by-side; it produces a 19-float `scene_frame` per frame that
+the renderer paints as a small overlay — same flat layout as
+`poc-12`, demonstrating that ADR-029's compute layer can coexist
+with the Lua/XML orchestration in a single module without coupling.
 
-1. **nuna-middleware coexists in the same wasm without coupling.**
-   Both ABIs are exported side-by-side (`engine_*` for the Lua/XML
-   orchestration story, `nuna_middleware_*` for the ADR-029
-   every-frame compute story). Neither calls into the other.
-2. **The renderer is swappable again.** Canvas2D in poc-05, three.js
-   here. The XML and Lua files are byte-identical to poc-05's except
-   for the `<api type="…"/>` attribute, which is informational.
+## Architecture vs sibling POCs
 
-## What gets rendered
+| | poc-05 | poc-12 | **poc-06** |
+| --- | --- | --- | --- |
+| Engine | C++ → WASM | – | **C++ → WASM** |
+| Renderer | Canvas2D | three.js | **three.js (3D)** |
+| Middleware | – | C++ → WASM (triangle) | **linked into same wasm** |
+| Scripts | Lua per entity | – | **Lua per entity (3D API)** |
+| XML parsing | tinyxml2 in WASM | – | **DOMParser in JS** |
+| Scene format | poc-local flat XML | hardcoded | **synth-xml + componentRef** |
+| Entry point | none | none | **`.cryo` manifest** |
 
-| Layer              | Source                                      | Renders to                                |
-| ------------------ | ------------------------------------------- | ----------------------------------------- |
-| Orbital scene      | `engine_*` + `*.tick.lua`                   | three.js `CircleGeometry` per entity      |
-| Middleware triangle | `nuna_middleware_produce_frame_flat`        | three.js `BufferGeometry` in top-right overlay |
-
-The middleware triangle is rendered into a small "minimap" overlay
-(top-right corner) so it's visually distinct from the frost orbital
-scene. They share the same `THREE.Scene` and `OrthographicCamera`.
+This is the first POC in the family that consumes the **real** asset
+shape used in `synth-playground/synth-game/` and `nuna/nuna/games/*`:
+project manifest + runtime config + scene-xml with `componentRef` +
+Lua tick scripts.
 
 ## Files
 
-| Path                                       | Role                                                |
-| ------------------------------------------ | --------------------------------------------------- |
-| [src/engine.cpp](src/engine.cpp)           | frost runtime: XML + Lua + frame loop (poc-05 port) |
-| [src/assets/](src/assets/)                 | runtime.xml, scene.xml, `*.tick.lua` (≡ poc-05)     |
-| [vendor/nuna-middleware/](vendor/nuna-middleware/) | git submodule — built into the same wasm     |
-| [web/index.html](web/index.html)           | browser shell + three.js renderer                   |
-| [build.sh](build.sh)                       | fetches Lua + tinyxml2, runs `emcc`                 |
+| Path | Role |
+| --- | --- |
+| [src/engine.cpp](src/engine.cpp) | WASM engine: entity table + Lua state per entity + `frost.*` API |
+| [build.sh](build.sh) | fetches Lua 5.4, builds `web/engine.mjs` + `engine.wasm` via emcc |
+| [vendor/nuna-middleware/](vendor/nuna-middleware/) | git submodule — built into the same wasm |
+| [web/index.html](web/index.html) | three.js from CDN, canvas, mounts main.js |
+| [web/main.js](web/main.js) | bootstrap: `.cryo` → runtime → scene → engine → renderer → frame loop |
+| [web/cryo.js](web/cryo.js) | `.cryo` manifest parser (DOMParser) |
+| [web/synth-xml.js](web/synth-xml.js) | scene + component + runtime parser with `componentRef` composition |
+| [web/renderer.js](web/renderer.js) | three.js scene builder + per-frame transform sync |
+| [web/assets/project.cryo](web/assets/project.cryo) | entry manifest |
+| [web/assets/runtime.frost](web/assets/runtime.frost) | runtime config — `<renderer>` api + `<scene uri="…"/>` |
+| [web/assets/scenes/orbital.synth.xml](web/assets/scenes/orbital.synth.xml) | scene: center + 3 orbiters + sun + ambient |
+| [web/assets/components/orbiter.synth.xml](web/assets/components/orbiter.synth.xml) | reusable component: script ref + radius/speed/phase/tilt |
+| [web/assets/scripts/center.tick.lua](web/assets/scripts/center.tick.lua) | pulsing-sphere tick |
+| [web/assets/scripts/orbiter.tick.lua](web/assets/scripts/orbiter.tick.lua) | orbital motion tick |
 
-## Build
+## The `frost.*` Lua API
+
+3D-capable evolution of poc-05's surface:
+
+| Lua call                                  | Effect |
+| ----------------------------------------- | ------ |
+| `frost.log(msg)`                          | writes to console |
+| `frost.getTime()`                         | seconds since `engine_init` |
+| `frost.self.id`                           | id of the currently-ticking entity |
+| `frost.self.props.<name>`                 | properties from component / entity XML |
+| `frost.getPosition(id)`                   | returns `x, y, z` |
+| `frost.setPosition(id, x, y, z)`          | move an entity |
+| `frost.getScale(id)`                      | returns `sx, sy, sz` |
+| `frost.setScale(id, sx, sy, sz)`          | resize an entity |
+| `frost.setColor(id, "#rgb")`              | recolour an entity |
+
+## Build & run
 
 Requires Emscripten on `PATH` (`emcc --version`).
 
@@ -62,38 +96,40 @@ python3 -m http.server -d web 8080
 open http://localhost:8080
 ```
 
-`build.sh` will refuse to run if the submodule hasn't been checked out.
-First run also pulls Lua 5.4.7 and tinyxml2 10.0.0 into `vendor/`
-(gitignored).
+`build.sh` will refuse to run if the `nuna-middleware` submodule is not
+checked out. First run also pulls Lua 5.4.7 from `lua.org` into
+`vendor/` (gitignored).
 
-## Exported wasm symbols
+## How this maps to the bigger picture
 
-Both ABIs are visible at runtime — JS can pick either or both:
+| nuna / Frost runtime model               | this POC |
+| ---------------------------------------- | -------- |
+| `.cryo` project manifest                 | `web/assets/project.cryo` |
+| `runtime-*.synth` / `runtime-*.frost`    | `web/assets/runtime.frost` |
+| `scene.synth.xml` + `componentRef`       | same |
+| `nuna-middleware` (per-frame compute)    | `vendor/nuna-middleware`, linked into wasm |
+| `frost-engine-api`                       | `web/renderer.js` (three.js impl) |
+| Vulkan renderer                          | three.js WebGL |
+| `*.tick.lua`                             | same |
 
-```js
-// frost-engine-api (poc-05 surface)
-engine_init, engine_tick,
-engine_get_entity_count, engine_get_entity_id,
-engine_get_entity_x, engine_get_entity_y,
-engine_get_entity_size, engine_get_entity_color
+The XML attribute names and Lua API names match the spec in
+`nuna/nuna/context/specs/frost-engine/frost-engine-api.schema.json`,
+so scripts authored against this POC should lift cleanly into the
+native runtime and vice versa.
 
-// nuna-middleware (ADR-029 surface)
-nuna_middleware_produce_frame_flat, nuna_middleware_version
-```
+## What's deliberately stubbed
 
-See [`vendor/nuna-middleware/include/nuna/middleware/middleware.h`](vendor/nuna-middleware/include/nuna/middleware/middleware.h)
-for the middleware ABI and
-[`vendor/nuna-middleware/include/nuna/middleware/scene_frame.h`](vendor/nuna-middleware/include/nuna/middleware/scene_frame.h)
-for the flat-buffer layout.
-
-## Relationship to other POCs
-
-| POC                                       | Orchestration | Renderer  | Middleware |
-| ----------------------------------------- | ------------- | --------- | ---------- |
-| [poc-05](../poc-05-frost-engine-api)      | Lua + XML     | Canvas2D  | —          |
-| poc-06 (this)                             | Lua + XML     | three.js  | linked in  |
-| [poc-07-cryolite](../poc-07-cryolite) | Lua + XML  | three.js  | linked in  |
-
-poc-07 packages the same wasm + a three.js viewer class as an npm
-library, so any browser or node consumer can `npm install` it and get
-the engine + a working viewer without touching Emscripten or build.sh.
+- **No real `nuna-middleware` ABI for scene compute.** This POC keeps
+  the middleware's `produce_frame_flat` triangle alongside the engine
+  to demonstrate coexistence; the engine still owns the per-entity
+  state. Swapping the engine's inner loop for a middleware call once
+  the middleware grows beyond a single triangle is a one-function
+  change in `engine_tick`.
+- **No backend.** `.cryo` declares a `<backend>` slot but this POC
+  runs the renderer alone.
+- **Placeholder geometry.** `<mesh shape="sphere"/>` makes a
+  `THREE.SphereGeometry`. Swapping in `gltf` is a one-import change
+  to `renderer.js`.
+- **Lua source uploaded as strings.** No compile step, no Lua bytecode
+  caching. Fine for POC; for production, pre-compile to bytecode and
+  upload via `engine_attach_bytecode`.

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<synth version="1.0"
+       xmlns="https://chevp.github.io/synth-protocol/schema/synth/1.0">
+<game-project version="1.0">
+
+    <metadata>
+        <name>poc-06 orbital demo</name>
+        <description>three.js renderer driven by .cryo + synth-xml + Lua tick scripts</description>
+        <version>0.1.0</version>
+        <author>chevp</author>
+        <created>2026-05-15T00:00:00Z</created>
+    </metadata>
+
+    <!-- No backend in this POC; the renderer runs alone in the browser. -->
+    <renderer>
+        <runtime>runtime.frost</runtime>
+        <autoStart>true</autoStart>
+    </renderer>
+
+    <paths>
+        <assets>.</assets>
+        <scenes>scenes</scenes>
+        <components>components</components>
+        <scripts>scripts</scripts>
+    </paths>
+
+    <launcher>
+        <startupOrder>sequential</startupOrder>
+        <showConsole>true</showConsole>
+        <workingDirectory>.</workingDirectory>
+    </launcher>
+
+</game-project>
+</synth>

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<synth version="1.0" author="chevp">
+<runtimeRenderer version="1.0">
+
+    <metadata>
+        <name>three.js orbital renderer</name>
+        <platform>web</platform>
+    </metadata>
+
+    <renderer>
+        <api type="three.js"/>
+        <window width="800" height="600"/>
+    </renderer>
+
+    <scene uri="scenes/orbital.synth.xml"/>
+
+</runtimeRenderer>
+</synth>

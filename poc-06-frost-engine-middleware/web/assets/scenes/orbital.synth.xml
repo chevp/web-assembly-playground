@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<synth version="1.0">
+<scene id="orbital" name="Orbital Demo">
+
+    <entities>
+
+        <!-- lights -->
+        <entity id="ambient">
+            <components>
+                <light type="ambient" color="#3a3a4a" intensity="0.6"/>
+            </components>
+        </entity>
+
+        <entity id="sun">
+            <transform position="5,10,5"/>
+            <components>
+                <light type="directional" color="#fff8e0" intensity="1.2"/>
+            </components>
+        </entity>
+
+        <!-- center body — pulses via center.tick.lua -->
+        <entity id="center">
+            <transform position="0,0,0" scale="1.2,1.2,1.2"/>
+            <components>
+                <mesh shape="sphere" color="#ffe66d"/>
+            </components>
+            <script uri="scripts/center.tick.lua"/>
+        </entity>
+
+        <!-- orbiters — share orbiter.synth.xml component (script + props) -->
+        <entity id="orbiter-a" componentRef="components/orbiter.synth.xml">
+            <transform position="3,0,0" scale="0.6,0.6,0.6"/>
+            <components>
+                <mesh shape="sphere" color="#ff6b6b"/>
+            </components>
+        </entity>
+
+        <entity id="orbiter-b" componentRef="components/orbiter.synth.xml">
+            <transform position="0,0,4" scale="0.4,0.4,0.4"/>
+            <components>
+                <mesh shape="sphere" color="#4ecdc4"/>
+            </components>
+        </entity>
+
+        <entity id="orbiter-c" componentRef="components/orbiter.synth.xml">
+            <transform position="-2.5,1,1" scale="0.3,0.3,0.3"/>
+            <components>
+                <mesh shape="sphere" color="#a78bfa"/>
+            </components>
+        </entity>
+
+    </entities>
+
+</scene>
+</synth>

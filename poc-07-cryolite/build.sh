@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# poc-07-frost-engine-threejs-lib build
+# poc-07-cryolite build
 #
 # Produces the npm package's wasm artifacts under lib/:
 #   - lib/engine.mjs    Emscripten glue (ES module)
 #   - lib/engine.wasm   the wasm binary itself
-#   - lib/engine.data   preloaded /assets payload
+#   - lib/assets/       copy of src/assets/ for the JS scene loader to fetch
 #
-# The .mjs file is built with default ENVIRONMENT (web+node), so the
-# same artifact is consumable from both a browser and a node script.
+# XML parsing happens in JS now (cryolite's scene loader) — the wasm has
+# no XML deps and accepts Lua source as strings via engine_attach_script.
+# Default ENVIRONMENT (web+node) keeps the same .mjs usable from both.
 
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -19,10 +20,8 @@ if [ ! -f vendor/nuna-middleware/src/middleware.cpp ]; then
 fi
 
 LUA_VERSION=5.4.7
-TINYXML2_VERSION=10.0.0
 VENDOR=vendor
 LUA_SRC="$VENDOR/lua-$LUA_VERSION/src"
-TINYXML2_DIR="$VENDOR/tinyxml2-$TINYXML2_VERSION"
 MIDDLEWARE_DIR="$VENDOR/nuna-middleware"
 
 mkdir -p "$VENDOR" lib
@@ -32,13 +31,6 @@ if [ ! -d "$LUA_SRC" ]; then
   curl -fsSL "https://www.lua.org/ftp/lua-$LUA_VERSION.tar.gz" -o "$VENDOR/lua.tar.gz"
   tar -xzf "$VENDOR/lua.tar.gz" -C "$VENDOR"
   rm "$VENDOR/lua.tar.gz"
-fi
-
-if [ ! -f "$TINYXML2_DIR/tinyxml2.cpp" ]; then
-  echo "fetching tinyxml2 $TINYXML2_VERSION..."
-  mkdir -p "$TINYXML2_DIR"
-  curl -fsSL "https://raw.githubusercontent.com/leethomason/tinyxml2/$TINYXML2_VERSION/tinyxml2.h"   -o "$TINYXML2_DIR/tinyxml2.h"
-  curl -fsSL "https://raw.githubusercontent.com/leethomason/tinyxml2/$TINYXML2_VERSION/tinyxml2.cpp" -o "$TINYXML2_DIR/tinyxml2.cpp"
 fi
 
 LUA_SRCS=()
@@ -51,12 +43,21 @@ done
 
 EXPORTS=(
   _engine_init
+  _engine_add_entity
+  _engine_set_position
+  _engine_set_scale
+  _engine_set_color
+  _engine_set_property
+  _engine_attach_script
   _engine_tick
   _engine_get_entity_count
   _engine_get_entity_id
   _engine_get_entity_x
   _engine_get_entity_y
-  _engine_get_entity_size
+  _engine_get_entity_z
+  _engine_get_entity_scale_x
+  _engine_get_entity_scale_y
+  _engine_get_entity_scale_z
   _engine_get_entity_color
   _nuna_middleware_produce_frame_flat
   _nuna_middleware_version
@@ -67,16 +68,18 @@ EXPORTS_JOINED=$(IFS=,; echo "${EXPORTS[*]}")
 
 echo "compiling..."
 emcc -O2 -std=c++17 \
-  -I"$LUA_SRC" -I"$TINYXML2_DIR" -I"$MIDDLEWARE_DIR/include" \
+  -I"$LUA_SRC" -I"$MIDDLEWARE_DIR/include" \
   src/engine.cpp \
   "$MIDDLEWARE_DIR/src/middleware.cpp" \
-  "$TINYXML2_DIR/tinyxml2.cpp" \
   "${LUA_SRCS[@]}" \
   -o lib/engine.mjs \
   -sMODULARIZE=1 -sEXPORT_ES6=1 \
   -sALLOW_MEMORY_GROWTH=1 \
   -sEXPORTED_RUNTIME_METHODS=ccall,cwrap,UTF8ToString,HEAPF32 \
-  -sEXPORTED_FUNCTIONS="$EXPORTS_JOINED" \
-  --preload-file src/assets@/assets
+  -sEXPORTED_FUNCTIONS="$EXPORTS_JOINED"
 
-echo "built: lib/engine.mjs, lib/engine.wasm, lib/engine.data"
+echo "copying assets..."
+rm -rf lib/assets
+cp -R src/assets lib/assets
+
+echo "built: lib/engine.mjs, lib/engine.wasm, lib/assets/"
