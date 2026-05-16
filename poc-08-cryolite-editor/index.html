@@ -1,0 +1,327 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>poc-08 — Cryolite live editor</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #1a1a1a; color: #ddd;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  #app { display: grid; grid-template-columns: 1fr 840px; height: 100vh; gap: 0; }
+
+  /* Left: editor */
+  #left { display: flex; flex-direction: column; min-width: 0; border-right: 1px solid #333; }
+  #tabs { display: flex; background: #0e1116; border-bottom: 1px solid #333; overflow-x: auto; }
+  .tab { background: transparent; color: #889; border: 0; border-right: 1px solid #222;
+    padding: 8px 14px; font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
+  .tab:hover { color: #ddd; }
+  .tab.active { color: #fff; background: #1a1a1a; border-bottom: 2px solid #4ecdc4; margin-bottom: -1px; }
+  #editor { flex: 1; min-height: 0; }
+
+  /* Right: preview */
+  #right { display: flex; flex-direction: column; background: #161616; padding: 12px; gap: 10px; min-width: 0; }
+  #toolbar { display: flex; align-items: center; gap: 12px; }
+  #run { background: #4ecdc4; color: #0a0a0a; border: 0; padding: 8px 16px;
+    font: inherit; font-weight: 600; font-size: 13px; cursor: pointer; border-radius: 3px; }
+  #run:hover { background: #6ee0d7; }
+  #run:disabled { background: #2a3a38; color: #556; cursor: wait; }
+  #status { color: #889; font-size: 12px; }
+  #canvas { width: 800px; height: 600px; background: #0e1116; border: 1px solid #333; display: block; }
+  #log { flex: 1; min-height: 80px; max-height: 200px; overflow: auto; background: #0e1116;
+    border: 1px solid #333; padding: 8px; margin: 0; font-size: 11px; white-space: pre-wrap; }
+  h1 { font-size: 13px; font-weight: 500; color: #aaa; margin: 0 0 0 auto; }
+</style>
+
+<div id="app">
+  <div id="left">
+    <div id="tabs"></div>
+    <div id="editor"></div>
+  </div>
+  <div id="right">
+    <div id="toolbar">
+      <button id="run" disabled>&#9654; Run</button>
+      <span id="status">loading editor&hellip;</span>
+      <h1>poc-08 &mdash; Cryolite live editor</h1>
+    </div>
+    <canvas id="canvas" width="800" height="600"></canvas>
+    <pre id="log"></pre>
+  </div>
+</div>
+
+<!-- Monaco AMD loader (loads global `require` + `monaco`). Kept as classic
+     scripts because Monaco still ships AMD; we bridge into our ES module
+     below by awaiting the loader before running. -->
+<script src="https://unpkg.com/monaco-editor@0.44.0/min/vs/loader.js"></script>
+<script>
+  // eslint-disable-next-line no-undef
+  require.config({ paths: { vs: "https://unpkg.com/monaco-editor@0.44.0/min/vs" } });
+</script>
+
+<script type="importmap">
+{
+  "imports": {
+    "three":           "https://unpkg.com/three@0.165.0/build/three.module.js",
+    "@chevp/cryolite": "../poc-07-cryolite/lib/index.js"
+  }
+}
+</script>
+
+<script type="module">
+  import * as THREE from "three";
+  import { FrostEngine, FrostRenderer, SynthXmlParser } from "@chevp/cryolite";
+
+  // ---------- Default tab contents (snapshot of poc-07's orbital demo) ----------
+
+  const FILES = {
+    "scene.xml": `<?xml version="1.0" encoding="UTF-8"?>
+<synth version="1.0">
+<scene id="orbital" name="Orbital Demo">
+
+    <entities>
+
+        <entity id="ambient">
+            <components>
+                <light type="ambient" color="#3a3a4a" intensity="0.6"/>
+            </components>
+        </entity>
+
+        <entity id="sun">
+            <transform position="5,10,5"/>
+            <components>
+                <light type="directional" color="#fff8e0" intensity="1.2"/>
+            </components>
+        </entity>
+
+        <entity id="center">
+            <transform position="0,0,0" scale="1.2,1.2,1.2"/>
+            <components>
+                <mesh shape="sphere" color="#ffe66d"/>
+            </components>
+            <script uri="scripts/center.tick.lua"/>
+        </entity>
+
+        <entity id="orbiter-a" componentRef="components/orbiter.synth.xml">
+            <transform position="3,0,0" scale="0.6,0.6,0.6"/>
+            <components>
+                <mesh shape="sphere" color="#ff6b6b"/>
+            </components>
+        </entity>
+
+        <entity id="orbiter-b" componentRef="components/orbiter.synth.xml">
+            <transform position="0,0,4" scale="0.4,0.4,0.4"/>
+            <components>
+                <mesh shape="sphere" color="#4ecdc4"/>
+            </components>
+        </entity>
+
+        <entity id="orbiter-c" componentRef="components/orbiter.synth.xml">
+            <transform position="-2.5,1,1" scale="0.3,0.3,0.3"/>
+            <components>
+                <mesh shape="sphere" color="#a78bfa"/>
+            </components>
+        </entity>
+
+    </entities>
+
+</scene>
+</synth>
+`,
+
+    "components/orbiter.synth.xml": `<?xml version="1.0" encoding="UTF-8"?>
+<synth version="1.0">
+<component type="orbiter">
+
+    <script uri="scripts/orbiter.tick.lua"/>
+
+    <properties>
+        <property name="radius" type="float" value="3.0"/>
+        <property name="speed"  type="float" value="1.0"/>
+        <property name="phase"  type="float" value="0.0"/>
+        <property name="tilt"   type="float" value="0.2"/>
+    </properties>
+
+</component>
+</synth>
+`,
+
+    "scripts/center.tick.lua": `-- center.tick.lua — pulses the central sphere.
+
+local id = frost.self.id
+local base_scale = 1.2
+
+function onLoad()
+    frost.log("center spawned: " .. id)
+end
+
+function onUpdate(dt)
+    local t = frost.getTime()
+    local pulse = 1.0 + 0.15 * math.sin(t * 2.0)
+    local s = base_scale * pulse
+    frost.setScale(id, s, s, s)
+end
+`,
+
+    "scripts/orbiter.tick.lua": `-- orbiter.tick.lua — orbits the entity around (0, 0, 0).
+
+local id     = frost.self.id
+local radius = frost.self.props.radius or 3.0
+local speed  = frost.self.props.speed  or 1.0
+local phase  = frost.self.props.phase  or 0.0
+local tilt   = frost.self.props.tilt   or 0.0
+
+local function hash_phase(s)
+    local h = 0
+    for i = 1, #s do h = (h * 31 + string.byte(s, i)) % 1000 end
+    return h / 1000.0 * (2 * math.pi)
+end
+phase = phase + hash_phase(id)
+
+function onLoad()
+    frost.log("orbiter " .. id .. " r=" .. radius .. " v=" .. speed)
+end
+
+function onUpdate(dt)
+    local t = frost.getTime() * speed + phase
+    local x = math.cos(t) * radius
+    local z = math.sin(t) * radius
+    local y = math.sin(t * 2.0) * radius * tilt
+    frost.setPosition(id, x, y, z)
+end
+`,
+  };
+
+  // ---------- Logger ----------
+
+  const logEl = document.getElementById("log");
+  const lines = [];
+  const log = (s) => {
+    lines.push(String(s));
+    if (lines.length > 200) lines.shift();
+    logEl.textContent = lines.join("\n");
+    logEl.scrollTop = logEl.scrollHeight;
+  };
+
+  // ---------- Monaco bootstrap (bridge AMD → module scope) ----------
+
+  await new Promise((resolve) => window.require(["vs/editor/editor.main"], resolve));
+
+  const models = {};
+  for (const [name, content] of Object.entries(FILES)) {
+    const lang = name.endsWith(".lua") ? "lua" : "xml";
+    models[name] = window.monaco.editor.createModel(content, lang);
+  }
+
+  let activeName = "scene.xml";
+  const editor = window.monaco.editor.create(document.getElementById("editor"), {
+    model: models[activeName],
+    theme: "vs-dark",
+    automaticLayout: true,
+    minimap: { enabled: false },
+    fontSize: 12,
+    scrollBeyondLastLine: false,
+    tabSize: 4,
+  });
+
+  const tabsEl = document.getElementById("tabs");
+  for (const name of Object.keys(FILES)) {
+    const tab = document.createElement("button");
+    tab.className = "tab" + (name === activeName ? " active" : "");
+    tab.textContent = name;
+    tab.dataset.name = name;
+    tab.onclick = () => {
+      activeName = name;
+      editor.setModel(models[name]);
+      for (const t of tabsEl.children) t.classList.toggle("active", t.dataset.name === name);
+    };
+    tabsEl.appendChild(tab);
+  }
+
+  // ---------- Virtual-fs adapter for SynthXmlParser ----------
+  //
+  // The stock parser does `fetch(baseUrl + relPath)`. We override the two
+  // hooks it uses (`_fetchRoot`, `fetchText`) to read from the editor's
+  // in-memory file map instead, so the engine never touches the network.
+
+  class VfsSynthXmlParser extends SynthXmlParser {
+    constructor(vfs) {
+      super("/");
+      this.vfs = vfs;
+    }
+    async _fetchRoot(relPath) {
+      const xml = this.vfs[relPath];
+      if (xml == null) throw new Error(`vfs miss: ${relPath}`);
+      const doc = new DOMParser().parseFromString(xml, "application/xml");
+      const err = doc.querySelector("parsererror");
+      if (err) throw new Error(`invalid XML in ${relPath}: ${err.textContent}`);
+      return doc.documentElement;
+    }
+    async fetchText(relPath) {
+      const text = this.vfs[relPath];
+      if (text == null) throw new Error(`vfs miss: ${relPath}`);
+      return text;
+    }
+  }
+
+  // ---------- Run ----------
+
+  const runBtn = document.getElementById("run");
+  const statusEl = document.getElementById("status");
+  let activeRun = null;  // { stop }
+
+  async function run() {
+    if (activeRun) { activeRun.stop(); activeRun = null; }
+    lines.length = 0;
+    logEl.textContent = "";
+
+    runBtn.disabled = true;
+    statusEl.textContent = "building…";
+
+    // Snapshot every Monaco model so edits during the run don't leak in.
+    const vfs = {};
+    for (const [name, model] of Object.entries(models)) vfs[name] = model.getValue();
+
+    try {
+      const engine = await FrostEngine.create({ print: log });
+      const parser = new VfsSynthXmlParser(vfs);
+
+      log("parsing scene.xml…");
+      const scene = await parser.loadScene("scene.xml");
+      log(`  scene: ${scene.id} — ${scene.entities.length} entities`);
+
+      await engine.uploadScene(scene, parser, { onLog: (s) => log("  + " + s) });
+
+      const canvas = document.getElementById("canvas");
+      const renderer = new FrostRenderer(canvas, { width: 800, height: 600 });
+      renderer.build(scene);
+
+      let raf = null;
+      let last = performance.now();
+      const loop = (now) => {
+        const dt = Math.min((now - last) / 1000, 0.1);
+        last = now;
+        engine.tick(dt);
+        renderer.sync(engine);
+        renderer.render();
+        raf = requestAnimationFrame(loop);
+      };
+      raf = requestAnimationFrame(loop);
+
+      activeRun = {
+        stop() {
+          if (raf != null) cancelAnimationFrame(raf);
+          raf = null;
+        },
+      };
+
+      statusEl.textContent =
+        `running · ${scene.entities.length} entities · nuna-middleware ${engine.middlewareVersion}`;
+    } catch (e) {
+      log("ERROR: " + (e?.stack || e?.message || e));
+      statusEl.textContent = "failed";
+      console.error(e);
+    } finally {
+      runBtn.disabled = false;
+    }
+  }
+
+  runBtn.onclick = run;
+  runBtn.disabled = false;
+  statusEl.textContent = "ready — press Run";
+</script>
