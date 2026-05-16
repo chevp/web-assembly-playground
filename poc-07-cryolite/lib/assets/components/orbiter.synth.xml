@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<synth version="1.0">
+<component type="orbiter">
+
+    <!-- All orbiters share the same tick script… -->
+    <script uri="scripts/orbiter.tick.lua"/>
+
+    <!-- …but with per-instance properties read in Lua via frost.self.props. -->
+    <properties>
+        <property name="radius" type="float" value="3.0"/>
+        <property name="speed"  type="float" value="1.0"/>
+        <property name="phase"  type="float" value="0.0"/>
+        <property name="tilt"   type="float" value="0.2"/>
+    </properties>
+
+</component>
+</synth>

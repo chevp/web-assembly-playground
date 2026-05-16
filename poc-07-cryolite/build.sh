@@ -66,12 +66,25 @@ EXPORTS=(
 )
 EXPORTS_JOINED=$(IFS=,; echo "${EXPORTS[*]}")
 
-echo "compiling..."
+LUA_OBJ_DIR="$VENDOR/lua-$LUA_VERSION/obj"
+mkdir -p "$LUA_OBJ_DIR"
+
+echo "compiling Lua (C)..."
+LUA_OBJS=()
+for src in "${LUA_SRCS[@]}"; do
+  obj="$LUA_OBJ_DIR/$(basename "${src%.c}").o"
+  if [ ! -f "$obj" ] || [ "$src" -nt "$obj" ]; then
+    emcc -O2 -I"$LUA_SRC" -c "$src" -o "$obj"
+  fi
+  LUA_OBJS+=("$obj")
+done
+
+echo "compiling engine + middleware (C++17) and linking..."
 emcc -O2 -std=c++17 \
   -I"$LUA_SRC" -I"$MIDDLEWARE_DIR/include" \
   src/engine.cpp \
   "$MIDDLEWARE_DIR/src/middleware.cpp" \
-  "${LUA_SRCS[@]}" \
+  "${LUA_OBJS[@]}" \
   -o lib/engine.mjs \
   -sMODULARIZE=1 -sEXPORT_ES6=1 \
   -sALLOW_MEMORY_GROWTH=1 \
