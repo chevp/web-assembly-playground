@@ -1,0 +1,156 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>poc-09 — AI scene editor / UX prototypes</title>
+<style>
+  :root {
+    --bg: #1a1a1a;
+    --panel: #161616;
+    --deep: #0e1116;
+    --chrome: #141821;
+    --border: #2a2a2a;
+    --text: #ddd;
+    --dim: #889;
+    --mute: #556;
+    --teal: #4ecdc4;
+    --yellow: #ffe66d;
+    --red: #ff6b6b;
+    --purple: #a78bfa;
+    --green: #6ee07a;
+    --coral: #ff8c66;
+    --skyblue: #7ec8ff;
+  }
+
+  html, body {
+    margin: 0; min-height: 100%; background: var(--bg); color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  body { padding: 48px 56px 80px; max-width: 980px; margin: 0 auto; }
+
+  .eyebrow {
+    color: var(--teal); font-size: 11px; letter-spacing: 0.12em;
+    text-transform: uppercase; margin: 0 0 10px;
+  }
+  h1 { font-size: 22px; font-weight: 500; color: #fff; margin: 0 0 12px; }
+  .lede { color: var(--dim); font-size: 13px; line-height: 1.6; margin: 0 0 36px; max-width: 720px; }
+  .lede em { font-style: normal; color: var(--text); }
+
+  section.thesis {
+    background: var(--panel); border: 1px solid var(--border);
+    border-left: 2px solid var(--teal);
+    padding: 18px 22px; margin: 0 0 40px;
+    font-size: 12px; line-height: 1.7; color: var(--text);
+  }
+  section.thesis p { margin: 0 0 8px; }
+  section.thesis p:last-child { margin: 0; color: var(--dim); }
+  section.thesis strong { color: var(--yellow); font-weight: 500; }
+
+  nav.prototypes {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px;
+  }
+  a.card {
+    display: block; background: var(--panel); border: 1px solid var(--border);
+    padding: 20px; text-decoration: none; color: var(--text);
+    transition: border-color 120ms ease, transform 120ms ease;
+    position: relative;
+  }
+  a.card:hover { border-color: var(--teal); transform: translateY(-2px); }
+  a.card .badge {
+    position: absolute; top: 14px; right: 14px;
+    width: 22px; height: 22px; border-radius: 50%;
+    display: grid; place-items: center;
+    font-size: 11px; color: var(--bg); font-weight: 700;
+  }
+  a.card.b .badge { background: var(--teal); }
+  a.card.c .badge { background: var(--yellow); }
+  a.card.d .badge { background: var(--purple); }
+  a.card.e .badge { background: var(--green); }
+  a.card.f .badge { background: var(--coral); }
+  a.card.g .badge { background: var(--skyblue); }
+  a.card h2 { font-size: 14px; font-weight: 500; color: #fff; margin: 0 0 8px; }
+  a.card .tagline { color: var(--dim); font-size: 11px; line-height: 1.5; margin: 0 0 14px; }
+  a.card .claim { color: var(--text); font-size: 11px; line-height: 1.6; }
+  a.card .claim::before { content: "✦ "; color: var(--teal); }
+
+  footer {
+    margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--border);
+    color: var(--mute); font-size: 11px; line-height: 1.6;
+  }
+  footer a { color: var(--dim); }
+  footer code { background: var(--panel); padding: 1px 6px; border-radius: 2px; color: var(--text); }
+</style>
+
+<p class="eyebrow">poc-09 / web-assembly-playground</p>
+<h1>AI-native scene editor — UX prototypes</h1>
+<p class="lede">
+  poc-08 stellt die Frage <em>„wie sieht ein Editor für Cryolite aus?"</em>.
+  poc-09 stellt die andere Frage: <em>„wie sieht das beste editierbare
+  Zwischenformat für Mensch + AI aus, und welche UX folgt daraus?"</em>
+  Sechs Hypothesen, jede ein eigener HTML-Mock (F bootet zusätzlich das poc-07-Cryolite-Wasm; G ist dieselbe Idee voll self-hosted, läuft per Doppelklick aus dem Dateisystem).
+</p>
+
+<section class="thesis">
+  <p>
+    Das Datenmodell aus poc-07 (<code style="color:var(--teal)">scene.xml</code>
+    + Komponenten + Lua) ist bereits AI-freundlich: modular, diffbar,
+    deterministisch patchbar. <strong>Der eigentliche Burggraben ist nicht
+    der Editor</strong>, sondern dieses Zwischenformat — und die UX, die es
+    Mensch und Modell ermöglicht, gemeinsam darauf zu arbeiten.
+  </p>
+  <p>
+    Klassische Editor-Komplexität (Docking, Toolpanels, monolithische IDE)
+    verliert an Wert, sobald AI das Authoring übernimmt. Was bleibt:
+    Inspector, Debugger, Override-Werkzeug, Spatial Editor — und ein
+    sichtbarer Patch-Layer.
+  </p>
+</section>
+
+<nav class="prototypes">
+  <a href="b-inline.html" class="card b">
+    <span class="badge">B</span>
+    <h2>Inline Cmd+K</h2>
+    <p class="tagline">Cursor-style. AI editiert Selektionen, Multi-File-Patches als Ghost-Text.</p>
+    <p class="claim">Schnellster Iterationsloop, Editor bleibt zentral.</p>
+  </a>
+
+  <a href="c-inspector.html" class="card c">
+    <span class="badge">C</span>
+    <h2>Generated Inspector</h2>
+    <p class="tagline">AI erkennt Genre, generiert das Inspector-Panel — nicht den Inhalt.</p>
+    <p class="claim">Thin Specialization statt harter Editor-Modi.</p>
+  </a>
+
+  <a href="d-remix.html" class="card d">
+    <span class="badge">D</span>
+    <h2>Composable Worlds</h2>
+    <p class="tagline">Szenen + Komponenten als Library. AI als Remixer und Kombinator.</p>
+    <p class="claim">GitHub × Prefabs × Cursor für kleine Spiele.</p>
+  </a>
+
+  <a href="e-chat.html" class="card e">
+    <span class="badge">E</span>
+    <h2>Chat-driven (claude.ai/design-style)</h2>
+    <p class="tagline">Kein Editor. Chat links, Szene rechts. Quelltext nur in einem optionalen Drawer als Projektion des Graphs (ADR-034).</p>
+    <p class="claim">Editor verschwindet, der Graph bleibt.</p>
+  </a>
+
+  <a href="f-live.html" class="card f">
+    <span class="badge">F</span>
+    <h2>Chat &rarr; live engine</h2>
+    <p class="tagline">Wie E, aber rechts läuft das echte poc-07-Cryolite (FrostEngine wasm + Three.js). Chips feuern echte <code>addEntity</code> / <code>attachScript</code>-Calls; der Drawer ist eine Live-Projektion des Engine-Zustands.</p>
+    <p class="claim">Chat ist die Tastatur, der Graph ist die Wahrheit, die Szene tickt sofort.</p>
+  </a>
+
+  <a href="g-local.html" class="card g">
+    <span class="badge">G</span>
+    <h2>Chat &rarr; live, self-hosted</h2>
+    <p class="tagline">Dieselbe Chat-driven UX wie F, aber ohne CDN, ohne ES-Module, ohne Wasm: eine einzige HTML-Datei mit inline JS-Mini-Engine und Canvas&nbsp;2D. Öffnet per Doppelklick via <code>file://</code>.</p>
+    <p class="claim">Wenn HTTP nicht da ist, geht <code>file://</code> &mdash; gleiche Story, andere Tools.</p>
+  </a>
+</nav>
+
+<footer>
+  Statische Mocks ohne Build, ohne Runtime, ohne API-Key. Daten und
+  AI-Antworten sind hartkodiert. Live-Integration mit poc-07-Cryolite
+  oder einer echten Anthropic-API ist eigene Iteration. Zurück zu
+  <a href="../">web-assembly-playground</a>.
+</footer>

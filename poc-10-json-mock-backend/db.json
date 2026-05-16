@@ -1,0 +1,57 @@
+{
+  "projects": [
+    {
+      "id": "orbital",
+      "name": "Orbital Demo",
+      "version": 1,
+      "nodes": [
+        {
+          "id": "scene:orbital",
+          "type": "scene",
+          "components": { "name": "Orbital Demo" }
+        },
+        {
+          "id": "entity:center",
+          "type": "entity",
+          "components": {
+            "transform": { "position": [0, 0, 0], "scale": [1.2, 1.2, 1.2] },
+            "mesh": { "shape": "sphere", "color": "#ffe66d" }
+          }
+        },
+        {
+          "id": "entity:orbiter-a",
+          "type": "entity",
+          "components": {
+            "transform": { "position": [3, 0, 0], "scale": [0.6, 0.6, 0.6] },
+            "mesh": { "shape": "sphere", "color": "#ff6b6b" },
+            "scriptProps": { "radius": 3.0, "speed": 1.0, "phase": 0.0, "tilt": 0.2 }
+          }
+        },
+        {
+          "id": "entity:orbiter-b",
+          "type": "entity",
+          "components": {
+            "transform": { "position": [0, 0, 4], "scale": [0.4, 0.4, 0.4] },
+            "mesh": { "shape": "sphere", "color": "#4ecdc4" },
+            "scriptProps": { "radius": 4.0, "speed": 0.8, "phase": 1.5, "tilt": 0.15 }
+          }
+        },
+        {
+          "id": "script:orbiter",
+          "type": "script",
+          "components": {
+            "language": "lua",
+            "source": "function onUpdate(dt)\n  local p = frost.self.props\n  local t = frost.getTime() * p.speed + p.phase\n  frost.setPosition(frost.self.id, math.cos(t)*p.radius, math.sin(t*2.0)*p.radius*p.tilt, math.sin(t)*p.radius)\nend\n"
+          }
+        }
+      ],
+      "edges": [
+        { "id": "e1", "from": "scene:orbital", "to": "entity:center",    "kind": "contains" },
+        { "id": "e2", "from": "scene:orbital", "to": "entity:orbiter-a", "kind": "contains" },
+        { "id": "e3", "from": "scene:orbital", "to": "entity:orbiter-b", "kind": "contains" },
+        { "id": "e4", "from": "entity:orbiter-a", "to": "script:orbiter", "kind": "runs" },
+        { "id": "e5", "from": "entity:orbiter-b", "to": "script:orbiter", "kind": "runs" }
+      ]
+    }
+  ]
+}

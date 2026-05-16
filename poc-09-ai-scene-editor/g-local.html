@@ -1,0 +1,562 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>poc-09 / G — Chat-driven, self-hosted (Canvas 2D)</title>
+<style>
+  :root {
+    --bg: #1a1a1a;
+    --panel: #161616;
+    --deep: #0e1116;
+    --chrome: #141821;
+    --border: #2a2a2a;
+    --border-soft: #1f1f1f;
+    --text: #ddd;
+    --dim: #889;
+    --mute: #556;
+    --teal: #4ecdc4;
+    --yellow: #ffe66d;
+    --red: #ff6b6b;
+    --purple: #a78bfa;
+    --green: #6ee07a;
+    --coral: #ff8c66;
+    --skyblue: #7ec8ff;
+  }
+
+  * { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: #2a2f3a transparent; }
+  *::-webkit-scrollbar { width: 8px; height: 8px; }
+  *::-webkit-scrollbar-thumb { background: #2a2f3a; border-radius: 4px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+
+  html, body {
+    margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+  }
+  #app { display: grid; grid-template-columns: 420px 1fr; height: 100vh; }
+
+  /* ---------- LEFT: chat ---------- */
+  #chat { display: flex; flex-direction: column; min-width: 0; border-right: 1px solid var(--border); background: var(--panel); }
+
+  .chat-head {
+    padding: 14px 18px; border-bottom: 1px solid var(--border-soft);
+    color: var(--dim); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+  }
+  .chat-head b { color: var(--skyblue); font-weight: 500; }
+  .chat-head .live { color: var(--green); margin-left: 8px; }
+  .chat-head .live::before { content: "● "; }
+
+  #thread { flex: 1; overflow: auto; padding: 18px 18px 24px; min-height: 0; }
+  .msg { margin-bottom: 22px; line-height: 1.6; }
+  .msg .who {
+    font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--mute); margin-bottom: 6px;
+  }
+  .msg.you .who { color: var(--dim); }
+  .msg.ai  .who { color: var(--skyblue); }
+  .msg .body { color: var(--text); font-size: 12px; }
+  .msg .body .ref { color: var(--teal); }
+  .msg .body .tag {
+    color: var(--skyblue); background: #122030; border: 1px solid #25405e;
+    padding: 0 5px; border-radius: 2px; font-size: 10px;
+  }
+  .msg.thinking .body { color: var(--mute); font-style: italic; }
+  .msg.thinking .body::after {
+    content: "•••"; margin-left: 4px; letter-spacing: 2px;
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:0.3} 50%{opacity:1} }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .chip {
+    background: transparent; color: var(--text); border: 1px solid var(--border);
+    padding: 6px 10px; border-radius: 16px; font: inherit; font-size: 11px;
+    cursor: pointer; text-align: left;
+  }
+  .chip:hover { border-color: var(--skyblue); color: var(--skyblue); }
+  .chip:disabled { opacity: 0.4; cursor: default; }
+
+  #composer { padding: 12px; border-top: 1px solid var(--border-soft); background: var(--deep); }
+  #composer .box {
+    display: flex; gap: 8px; align-items: flex-end;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 8px 10px;
+  }
+  #composer textarea {
+    flex: 1; resize: none; min-height: 22px; max-height: 120px;
+    background: transparent; color: var(--text); border: 0; outline: none;
+    font: inherit; font-size: 12px; line-height: 1.5;
+  }
+  #composer textarea::placeholder { color: var(--mute); }
+  #composer button {
+    background: var(--skyblue); color: var(--bg); border: 0;
+    padding: 6px 12px; border-radius: 3px; font: inherit; font-weight: 600; font-size: 11px;
+    cursor: pointer;
+  }
+  #composer button:hover { background: #a4d8ff; }
+  #composer button:disabled { background: #30506a; color: #99a; cursor: default; }
+  #composer .hint { margin-top: 6px; color: var(--mute); font-size: 10px; padding: 0 2px; }
+  #composer .hint code { color: var(--green); }
+
+  /* ---------- RIGHT: live preview + drawer ---------- */
+  #right { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+
+  .preview-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 16px; background: var(--chrome); border-bottom: 1px solid var(--border);
+    color: var(--dim); font-size: 11px;
+  }
+  .preview-bar .left { display: flex; align-items: center; gap: 12px; }
+  .preview-bar .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--mute); }
+  .preview-bar .dot.live { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .preview-bar .title { color: var(--text); }
+  .preview-bar .meta { color: var(--mute); }
+  .preview-bar .right { color: var(--mute); font-size: 10px; }
+
+  #stage {
+    flex: 1; min-height: 0; position: relative; overflow: hidden;
+    background: #0a0c10;
+    display: grid; place-items: center;
+  }
+  #canvas {
+    display: block;
+    background: #0a0c10;
+    max-width: 100%; max-height: 100%;
+  }
+
+  #drawer {
+    border-top: 1px solid var(--border); background: var(--deep);
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  #drawer .head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 16px; cursor: pointer; user-select: none;
+    color: var(--dim); font-size: 11px;
+  }
+  #drawer .head:hover { color: var(--text); }
+  #drawer .head .left { display: flex; align-items: center; gap: 8px; }
+  #drawer .head .chev { display: inline-block; transition: transform 120ms ease; color: var(--mute); }
+  #drawer .head .fmt { color: var(--teal); }
+  #drawer .head .badge {
+    background: #122030; color: var(--skyblue); border: 1px solid #25405e;
+    padding: 1px 6px; border-radius: 2px; font-size: 10px;
+  }
+  #drawer .head .ver { color: var(--mute); font-size: 10px; }
+  #drawer.open .head .chev { transform: rotate(90deg); }
+  #drawer .body { max-height: 0; overflow: hidden; transition: max-height 200ms ease; }
+  #drawer.open .body { max-height: 36vh; overflow: auto; }
+  #drawer pre {
+    margin: 0; padding: 12px 16px 18px;
+    font-size: 11px; line-height: 1.55; color: var(--text);
+    white-space: pre; tab-size: 2;
+  }
+</style>
+
+<div id="app">
+
+  <div id="chat">
+    <div class="chat-head">
+      poc-09 / <b>G</b> &mdash; chat &rarr; live engine (self-hosted)
+      <span class="live" id="live-flag">running</span>
+    </div>
+
+    <div id="thread"></div>
+
+    <div id="composer">
+      <div class="box">
+        <textarea id="prompt" rows="1" placeholder="describe a change…"></textarea>
+        <button id="send" type="button">send</button>
+      </div>
+      <div class="hint">
+        no CDN, no wasm, no server &middot; opens via <code>file://</code>
+      </div>
+    </div>
+  </div>
+
+  <div id="right">
+    <div class="preview-bar">
+      <div class="left">
+        <span class="dot live" id="status-dot"></span>
+        <span class="title">scene:orbital</span>
+        <span class="meta" id="status-meta">1 nodes · 0 edges · version 1</span>
+      </div>
+      <div class="right" id="mw-version">canvas2d · in-process tick</div>
+    </div>
+
+    <div id="stage">
+      <canvas id="canvas" width="800" height="600"></canvas>
+    </div>
+
+    <div id="drawer">
+      <div class="head" id="drawer-head">
+        <div class="left">
+          <span class="chev">&rsaquo;</span>
+          <span>show source</span>
+          <span class="fmt">graph-json/v1</span>
+          <span class="badge">live projection</span>
+        </div>
+        <span class="ver" id="drawer-ver">version 1</span>
+      </div>
+      <div class="body"><pre id="drawer-src">{}</pre></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+"use strict";
+
+// ---------------------------------------------------------------------------
+// MiniEngine — same shape as poc-07's FrostEngine, in pure JS, no wasm.
+// Entities are { id, pos, scale, color, update? }. tick(dt) advances time
+// and runs each entity's update callback. Order doesn't matter for orbits.
+// ---------------------------------------------------------------------------
+
+class MiniEngine {
+  constructor() {
+    this.entities = new Map();
+    this.order = [];     // insertion order for stable iteration
+    this.t = 0;
+  }
+  addEntity(id) {
+    if (this.entities.has(id)) return;
+    this.entities.set(id, { id, x: 0, y: 0, z: 0, sx: 1, sy: 1, sz: 1, color: "#fff", update: null });
+    this.order.push(id);
+  }
+  setPosition(id, x, y, z) { const e = this.entities.get(id); if (e) { e.x = x; e.y = y; e.z = z; } }
+  setScale(id, sx, sy, sz) { const e = this.entities.get(id); if (e) { e.sx = sx; e.sy = sy; e.sz = sz; } }
+  setColor(id, c)          { const e = this.entities.get(id); if (e) { e.color = c; } }
+  attachUpdate(id, fn)     { const e = this.entities.get(id); if (e) { e.update = fn; } }
+  tick(dt) {
+    this.t += dt;
+    for (const id of this.order) {
+      const e = this.entities.get(id);
+      if (e && e.update) e.update(e, this.t, dt);
+    }
+  }
+  get count() { return this.entities.size; }
+  *iter() { for (const id of this.order) yield this.entities.get(id); }
+}
+
+// ---------------------------------------------------------------------------
+// Canvas 2D renderer — top-down view of the engine state. Sun glow, dashed
+// orbit rings for entities that carry a `radius` hint, planets as glowing
+// dots. Pure painting, no DOM updates per frame.
+// ---------------------------------------------------------------------------
+
+class CanvasRenderer {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext("2d");
+    this.w = canvas.width;
+    this.h = canvas.height;
+    this.cx = this.w / 2;
+    this.cy = this.h / 2;
+    this.scale = 38; // pixels per world unit
+  }
+  clear() {
+    const { ctx, w, h } = this;
+    // Deep background with subtle vignette
+    const grd = ctx.createRadialGradient(this.cx, this.cy, 40, this.cx, this.cy, Math.max(w, h));
+    grd.addColorStop(0, "#161b22");
+    grd.addColorStop(1, "#0a0c10");
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, 0, w, h);
+
+    // Faint grid
+    ctx.strokeStyle = "rgba(255,255,255,0.04)";
+    ctx.lineWidth = 1;
+    for (let x = (this.cx % 32); x < w; x += 32) {
+      ctx.beginPath(); ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, h); ctx.stroke();
+    }
+    for (let y = (this.cy % 32); y < h; y += 32) {
+      ctx.beginPath(); ctx.moveTo(0, y + 0.5); ctx.lineTo(w, y + 0.5); ctx.stroke();
+    }
+  }
+  ring(radiusUnits) {
+    const { ctx } = this;
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,255,255,0.08)";
+    ctx.setLineDash([4, 6]);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(this.cx, this.cy, radiusUnits * this.scale, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+  drawEntity(e, opts = {}) {
+    const { ctx } = this;
+    const sx = this.cx + e.x * this.scale;
+    const sy = this.cy + e.z * this.scale;  // map z→screen-y for top-down
+    const radius = Math.max(2, e.sx * 12);  // simple scale→pixels
+    // Glow
+    const glow = ctx.createRadialGradient(sx, sy, radius * 0.3, sx, sy, radius * 3);
+    glow.addColorStop(0, e.color);
+    glow.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(sx, sy, radius * 3, 0, Math.PI * 2);
+    ctx.fill();
+    // Body
+    ctx.fillStyle = e.color;
+    ctx.beginPath();
+    ctx.arc(sx, sy, radius, 0, Math.PI * 2);
+    ctx.fill();
+    // Label
+    if (opts.label) {
+      ctx.fillStyle = "rgba(220,220,220,0.55)";
+      ctx.font = "10px ui-monospace, Menlo, monospace";
+      ctx.fillText(opts.label, sx + radius + 6, sy + 3);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Setup
+// ---------------------------------------------------------------------------
+
+const engine = new MiniEngine();
+const canvas = document.getElementById("canvas");
+const renderer = new CanvasRenderer(canvas);
+
+// Initial entity: the sun
+engine.addEntity("entity:sun");
+engine.setColor("entity:sun", "#ffe66d");
+engine.setScale("entity:sun", 1.4, 1.4, 1.4);
+
+// Labels per id, populated as chats add entities
+const labels = new Map([["entity:sun", "sun"]]);
+// Orbit-radius hint per id, so the renderer can draw a dashed ring
+const ringRadii = new Map();
+
+// ---------- Graph mirror (ADR-034 source-of-truth view) ----------
+const graph = {
+  version: 1,
+  nodes: [
+    { id: "scene:orbital", type: "scene",  components: { name: "Orbital Demo (self-hosted)" } },
+    { id: "script:orbit",  type: "script", components: { language: "js" } },
+    { id: "entity:sun",    type: "entity", components: {
+        transform: { position: [0,0,0], scale: [1.4,1.4,1.4] },
+        mesh: { shape: "sphere", color: "#ffe66d" },
+    }},
+  ],
+  edges: [
+    { from: "scene:orbital", to: "entity:sun", kind: "contains" },
+  ],
+};
+
+function bump() { graph.version++; }
+function addNode(node) { graph.nodes.push(node); bump(); refreshStatus(); maybeRenderDrawer(); }
+function addEdge(edge) { graph.edges.push(edge); bump(); refreshStatus(); maybeRenderDrawer(); }
+function updateNode(id, patch) {
+  const n = graph.nodes.find((x) => x.id === id);
+  if (n) n.components = { ...n.components, ...patch };
+  bump(); refreshStatus(); maybeRenderDrawer();
+}
+
+const statusMeta = document.getElementById("status-meta");
+const drawerVer  = document.getElementById("drawer-ver");
+function refreshStatus() {
+  statusMeta.textContent = `${graph.nodes.length} nodes · ${graph.edges.length} edges · version ${graph.version}`;
+  drawerVer.textContent = `version ${graph.version}`;
+}
+
+// ---------- Drawer ----------
+const drawerEl   = document.getElementById("drawer");
+const drawerHead = document.getElementById("drawer-head");
+const drawerSrc  = document.getElementById("drawer-src");
+drawerHead.addEventListener("click", () => {
+  drawerEl.classList.toggle("open");
+  if (drawerEl.classList.contains("open")) renderDrawer();
+});
+function maybeRenderDrawer() { if (drawerEl.classList.contains("open")) renderDrawer(); }
+function renderDrawer()      { drawerSrc.textContent = JSON.stringify(graph, null, 2); }
+
+// ---------- Render loop ----------
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min((now - last) / 1000, 0.1);
+  last = now;
+  engine.tick(dt);
+
+  renderer.clear();
+  // Rings (drawn behind entities)
+  for (const r of ringRadii.values()) renderer.ring(r);
+  // Entities
+  for (const e of engine.iter()) {
+    renderer.drawEntity(e, { label: labels.get(e.id) });
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ---------------------------------------------------------------------------
+// Chat
+// ---------------------------------------------------------------------------
+
+const threadEl = document.getElementById("thread");
+const promptEl = document.getElementById("prompt");
+const sendEl   = document.getElementById("send");
+
+function appendMsg(who, html, extraCls = "") {
+  const wrap = document.createElement("div");
+  wrap.className = `msg ${who} ${extraCls}`.trim();
+  wrap.innerHTML = `<div class="who">${who === "you" ? "you" : "claude"}</div><div class="body">${html}</div>`;
+  threadEl.appendChild(wrap);
+  threadEl.scrollTop = threadEl.scrollHeight;
+  return wrap;
+}
+function appendChips(items, onClick) {
+  const row = document.createElement("div");
+  row.className = "chips";
+  for (const it of items) {
+    const b = document.createElement("button");
+    b.className = "chip";
+    b.textContent = it.prompt;
+    b.onclick = () => onClick(it, row);
+    row.appendChild(b);
+  }
+  threadEl.appendChild(row);
+  threadEl.scrollTop = threadEl.scrollHeight;
+  return row;
+}
+
+// Orbit "script" — a closure stamped onto the entity. Stand-in for what
+// would be a Lua script attached via engine.attachScript(id, source) in
+// the wasm-backed variant (f-live.html). The graph treats it the same:
+// every orbiter edges to script:orbit with kind=runs.
+function makeOrbit(r, speed) {
+  return (e, t) => {
+    const a = t * speed;
+    e.x = Math.cos(a) * r;
+    e.z = Math.sin(a) * r;
+  };
+}
+
+const steps = [
+  {
+    prompt: "add a red planet at radius 3",
+    reply:  "Added <span class=\"ref\">entity:planet-red</span> at radius 3, runs <span class=\"ref\">script:orbit</span> at <span class=\"tag\">speed 1.0</span>. The right pane is a real tick loop — Canvas&nbsp;2D over an in-process JS engine.",
+    apply() {
+      const id = "entity:planet-red";
+      engine.addEntity(id);
+      engine.setColor(id, "#ff6b6b");
+      engine.setScale(id, 0.45, 0.45, 0.45);
+      engine.attachUpdate(id, makeOrbit(3.0, 1.0));
+      labels.set(id, "planet-red · r=3");
+      ringRadii.set(id, 3.0);
+      addNode({ id, type: "entity", components: {
+        transform: { position: [3,0,0], scale: [0.45,0.45,0.45] },
+        mesh: { shape: "sphere", color: "#ff6b6b" },
+        scriptProps: { radius: 3.0, speed: 1.0 },
+      }});
+      addEdge({ from: "scene:orbital", to: id, kind: "contains" });
+      addEdge({ from: id, to: "script:orbit", kind: "runs" });
+    },
+  },
+  {
+    prompt: "add a teal one further out, twice as fast",
+    reply:  "Added <span class=\"ref\">entity:planet-teal</span> at radius 4.5 with <span class=\"tag\">speed 2.0</span>. Same <span class=\"ref\">script:orbit</span> — only the per-entity scriptProps differ.",
+    apply() {
+      const id = "entity:planet-teal";
+      engine.addEntity(id);
+      engine.setColor(id, "#4ecdc4");
+      engine.setScale(id, 0.4, 0.4, 0.4);
+      engine.attachUpdate(id, makeOrbit(4.5, 2.0));
+      labels.set(id, "planet-teal · r=4.5");
+      ringRadii.set(id, 4.5);
+      addNode({ id, type: "entity", components: {
+        transform: { position: [4.5,0,0], scale: [0.4,0.4,0.4] },
+        mesh: { shape: "sphere", color: "#4ecdc4" },
+        scriptProps: { radius: 4.5, speed: 2.0 },
+      }});
+      addEdge({ from: "scene:orbital", to: id, kind: "contains" });
+      addEdge({ from: id, to: "script:orbit", kind: "runs" });
+    },
+  },
+  {
+    prompt: "add a slow purple one far out",
+    reply:  "Added <span class=\"ref\">entity:planet-purple</span> at radius 7 with <span class=\"tag\">speed 0.4</span>. Three planets share one script — that's the edge-based reuse you can't express as a file tree.",
+    apply() {
+      const id = "entity:planet-purple";
+      engine.addEntity(id);
+      engine.setColor(id, "#a78bfa");
+      engine.setScale(id, 0.55, 0.55, 0.55);
+      engine.attachUpdate(id, makeOrbit(7.0, 0.4));
+      labels.set(id, "planet-purple · r=7");
+      ringRadii.set(id, 7.0);
+      addNode({ id, type: "entity", components: {
+        transform: { position: [7,0,0], scale: [0.55,0.55,0.55] },
+        mesh: { shape: "sphere", color: "#a78bfa" },
+        scriptProps: { radius: 7.0, speed: 0.4 },
+      }});
+      addEdge({ from: "scene:orbital", to: id, kind: "contains" });
+      addEdge({ from: id, to: "script:orbit", kind: "runs" });
+    },
+  },
+  {
+    prompt: "make the red one bigger",
+    reply:  "Bumped <span class=\"ref\">entity:planet-red</span> scale to <span class=\"tag\">0.9</span>. Same node, transform patched — no file rewrite.",
+    apply() {
+      engine.setScale("entity:planet-red", 0.9, 0.9, 0.9);
+      updateNode("entity:planet-red", {
+        transform: { position: [3,0,0], scale: [0.9,0.9,0.9] },
+      });
+    },
+  },
+];
+
+let stepIdx = 0;
+let pendingChips = null;
+function showCurrentChips() {
+  if (pendingChips) { pendingChips.remove(); pendingChips = null; }
+  if (stepIdx >= steps.length) {
+    appendMsg("ai", "That's the canned walk-through. Free-text input below is a stub — wiring it to a real model + tool-calls is the next variant.");
+    promptEl.placeholder = "(canned demo finished)";
+    promptEl.disabled = true;
+    sendEl.disabled = true;
+    return;
+  }
+  pendingChips = appendChips([steps[stepIdx]], runStep);
+}
+function runStep(step) {
+  if (pendingChips) { pendingChips.remove(); pendingChips = null; }
+  appendMsg("you", step.prompt);
+  const thinking = appendMsg("ai", "applying", "thinking");
+  setTimeout(() => {
+    try { step.apply(); }
+    catch (err) {
+      thinking.remove();
+      appendMsg("ai", `engine call failed: <code>${String((err && err.message) || err)}</code>`);
+      return;
+    }
+    thinking.remove();
+    appendMsg("ai", step.reply);
+    stepIdx++;
+    showCurrentChips();
+  }, 450);
+}
+
+// Greeting + first chip
+appendMsg(
+  "ai",
+  `Self-hosted Cryolite-shaped mini-engine is up. Empty scene with a sun (<span class="ref">entity:sun</span>). The right pane is a real tick loop — Canvas&nbsp;2D over an in-process JS engine that mirrors poc-07's <code>FrostEngine</code> API. Pick a prompt:`,
+);
+showCurrentChips();
+
+// Free-text composer: echoes back, points to chips.
+sendEl.addEventListener("click", () => {
+  const txt = promptEl.value.trim();
+  if (!txt) return;
+  appendMsg("you", txt);
+  appendMsg("ai", "(free-text isn't wired to a model in this POC — use the suggested chip to drive an engine call)");
+  promptEl.value = "";
+});
+promptEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendEl.click();
+  }
+});
+promptEl.addEventListener("input", () => {
+  promptEl.style.height = "auto";
+  promptEl.style.height = Math.min(promptEl.scrollHeight, 120) + "px";
+});
+</script>

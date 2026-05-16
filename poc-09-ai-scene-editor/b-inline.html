@@ -1,0 +1,451 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>poc-09 / B — Inline Cmd+K</title>
+<style>
+  :root {
+    --bg: #1a1a1a;
+    --panel: #161616;
+    --deep: #0e1116;
+    --chrome: #141821;
+    --border: #2a2a2a;
+    --text: #ddd;
+    --dim: #889;
+    --mute: #556;
+    --teal: #4ecdc4;
+    --yellow: #ffe66d;
+    --red: #ff6b6b;
+    --purple: #a78bfa;
+    --diff-add-bg: #0f2818;
+    --diff-add-fg: #4ade80;
+    --diff-sel-bg: #1f2a3a;
+  }
+
+  * { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: #2a2f3a transparent; }
+  *::-webkit-scrollbar { width: 8px; height: 8px; }
+  *::-webkit-scrollbar-thumb { background: #2a2f3a; border-radius: 4px; }
+
+  html, body {
+    margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+  }
+  #app { display: grid; grid-template-columns: 1fr 460px; height: 100vh; }
+
+  /* ---- LEFT: editor ---- */
+  #left { display: flex; flex-direction: column; min-width: 0; border-right: 1px solid var(--border); }
+
+  /* Multi-file patch banner */
+  .banner {
+    display: flex; align-items: flex-start; gap: 12px;
+    background: linear-gradient(180deg, #1b2a26 0%, #182320 100%);
+    border-bottom: 1px solid #2a4a44;
+    padding: 10px 14px; font-size: 11px;
+  }
+  .banner .spark { color: var(--teal); flex: 0 0 auto; line-height: 1.5; }
+  .banner .body { flex: 1; line-height: 1.55; }
+  .banner .body .title { color: var(--text); }
+  .banner .body .title b { color: var(--teal); font-weight: 500; }
+  .banner .body .files { color: var(--dim); margin-top: 4px; }
+  .banner .body .files span { color: var(--text); }
+  .banner .body .files .add { color: var(--diff-add-fg); }
+  .banner .body .files .new { background: var(--diff-add-bg); color: var(--diff-add-fg); padding: 0 5px; border-radius: 2px; font-size: 10px; margin-left: 4px; }
+  .banner .keys { display: flex; gap: 6px; flex: 0 0 auto; align-self: center; }
+  .banner kbd {
+    background: #0e1116; border: 1px solid #2a3a44; color: var(--dim);
+    padding: 2px 6px; border-radius: 3px; font-size: 10px; font-family: inherit;
+  }
+  .banner kbd.accent { color: var(--teal); border-color: #2a5a52; }
+
+  /* Tabs */
+  #tabs {
+    display: flex; gap: 2px; background: var(--chrome);
+    border-bottom: 1px solid var(--border); padding: 6px 8px 0;
+  }
+  .tab {
+    background: transparent; color: var(--dim); border: 0;
+    padding: 8px 14px 9px; font: inherit; font-size: 11px; cursor: pointer;
+    border-radius: 6px 6px 0 0; white-space: nowrap; position: relative;
+  }
+  .tab:hover { color: var(--text); background: #1c2230; }
+  .tab.active { color: #fff; background: var(--bg); }
+  .tab.active::after {
+    content: ""; position: absolute; left: 8px; right: 8px; bottom: -1px;
+    height: 2px; background: var(--teal); border-radius: 2px 2px 0 0;
+  }
+  .tab .dot {
+    display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--diff-add-fg); margin-left: 6px; vertical-align: middle;
+  }
+  .tab .mod { color: var(--yellow); margin-left: 4px; }
+
+  /* Editor pane */
+  #editor-shell { flex: 1; min-height: 0; position: relative; overflow: hidden; }
+  #editor {
+    height: 100%; overflow: auto;
+    padding: 16px 0 80px 0;
+    font-size: 12px; line-height: 1.6;
+    counter-reset: line;
+  }
+  .ln {
+    display: grid; grid-template-columns: 48px 1fr; align-items: baseline;
+  }
+  .ln .gutter {
+    text-align: right; padding: 0 12px 0 0; color: var(--mute);
+    user-select: none; font-size: 11px;
+  }
+  .ln .src { padding-right: 16px; white-space: pre; }
+
+  /* Syntax highlighting */
+  .tag    { color: #4ec9b0; }
+  .attr   { color: #9cdcfe; }
+  .str    { color: #ce9178; }
+  .punct  { color: #6e7681; }
+  .key    { color: #c586c0; }
+  .comm   { color: #6a9955; font-style: italic; }
+
+  /* Selection highlight: covers a range of lines */
+  .ln.selected {
+    background: var(--diff-sel-bg);
+    box-shadow: inset 2px 0 0 var(--teal);
+  }
+  /* Ghost-text (proposed insertions) */
+  .ln.ghost {
+    background: rgba(45, 90, 60, 0.15);
+    box-shadow: inset 2px 0 0 var(--diff-add-fg);
+  }
+  .ln.ghost .gutter { color: var(--diff-add-fg); }
+  .ln.ghost .src { color: var(--diff-add-fg); opacity: 0.92; }
+  .ln.ghost .src .tag,
+  .ln.ghost .src .attr,
+  .ln.ghost .src .str { color: var(--diff-add-fg); }
+  .ln.ghost .src .punct { color: rgba(74, 222, 128, 0.6); }
+
+  /* Floating Cmd+K prompt */
+  .cmdk {
+    position: absolute;
+    left: 56px; right: 24px; top: 168px;
+    background: #0d1014;
+    border: 1px solid var(--teal);
+    border-radius: 6px;
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(78, 205, 196, 0.15);
+    z-index: 5;
+    overflow: hidden;
+  }
+  .cmdk .row { display: flex; align-items: center; padding: 10px 12px; gap: 10px; }
+  .cmdk .icon { color: var(--teal); font-size: 14px; }
+  .cmdk .prompt { flex: 1; color: var(--text); font-size: 13px; }
+  .cmdk .prompt .caret {
+    display: inline-block; width: 7px; height: 13px;
+    background: var(--teal); vertical-align: -2px; margin-left: 1px;
+    animation: blink 1s steps(1) infinite;
+  }
+  @keyframes blink { 50% { background: transparent; } }
+  .cmdk .meta {
+    display: flex; gap: 6px; align-items: center;
+    color: var(--dim); font-size: 10px;
+  }
+  .cmdk kbd {
+    background: #181d24; border: 1px solid #2a3340; color: var(--dim);
+    padding: 1px 6px; border-radius: 3px; font-size: 10px; font-family: inherit;
+  }
+  .cmdk .hint {
+    border-top: 1px solid #1c2128;
+    padding: 8px 12px; font-size: 10px; color: var(--mute);
+    display: flex; justify-content: space-between;
+  }
+  .cmdk .hint .ai {
+    color: var(--teal);
+  }
+  .cmdk .hint .ai::before { content: "● "; }
+
+  /* ---- RIGHT: preview/log/timeline ---- */
+  #right {
+    display: flex; flex-direction: column;
+    background: var(--panel); padding: 12px; gap: 10px; min-width: 0;
+  }
+  #toolbar { display: flex; align-items: center; gap: 12px; }
+  #run {
+    background: var(--teal); color: var(--bg); border: 0;
+    padding: 7px 14px; font: inherit; font-weight: 600; font-size: 12px;
+    cursor: pointer; border-radius: 3px;
+  }
+  #run:hover { background: #6ee0d7; }
+  #status { color: var(--dim); font-size: 11px; }
+  #status .live { color: var(--diff-add-fg); }
+  #status .live::before { content: "● "; }
+  h1.title { font-size: 12px; font-weight: 500; color: var(--dim); margin: 0 0 0 auto; }
+  h1.title a { color: var(--dim); text-decoration: none; }
+  h1.title a:hover { color: var(--teal); }
+
+  #canvas-wrap {
+    background: var(--deep); border: 1px solid #333;
+    aspect-ratio: 4 / 3; position: relative; overflow: hidden;
+  }
+  #canvas-wrap .grid {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+  #canvas-wrap .center {
+    position: absolute; left: 50%; top: 50%; width: 64px; height: 64px;
+    margin: -32px 0 0 -32px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #fff6c0, var(--yellow) 60%, #8a7a30);
+    box-shadow: 0 0 40px rgba(255, 230, 109, 0.4);
+  }
+  #canvas-wrap .orbiter {
+    position: absolute; border-radius: 50%; box-shadow: 0 0 12px currentColor;
+  }
+  #canvas-wrap .o-a { left: calc(50% + 110px); top: calc(50% - 6px); width: 24px; height: 24px; background: var(--red); color: var(--red); }
+  #canvas-wrap .o-b { left: calc(50% - 130px); top: calc(50% + 40px); width: 18px; height: 18px; background: var(--teal); color: var(--teal); }
+  #canvas-wrap .o-c { left: calc(50% + 40px); top: calc(50% - 80px); width: 14px; height: 14px; background: var(--purple); color: var(--purple); }
+  /* Faded ghost of where the new entity will go */
+  #canvas-wrap .ghost-entity {
+    position: absolute; left: calc(50% - 180px); top: calc(50% - 100px);
+    width: 22px; height: 22px; border-radius: 50%;
+    border: 1.5px dashed var(--diff-add-fg);
+    background: rgba(74, 222, 128, 0.1);
+  }
+  #canvas-wrap .ghost-entity::after {
+    content: "proposed: enemy_a"; position: absolute; left: 28px; top: 4px;
+    color: var(--diff-add-fg); font-size: 10px; white-space: nowrap;
+  }
+  #canvas-wrap .stamp {
+    position: absolute; bottom: 6px; right: 8px;
+    color: var(--mute); font-size: 10px;
+  }
+
+  /* Patch history */
+  .section { background: var(--deep); border: 1px solid #2a2a2a; }
+  .section .head {
+    padding: 8px 12px; border-bottom: 1px solid #1f1f1f;
+    color: var(--dim); font-size: 11px; display: flex; align-items: center; gap: 8px;
+  }
+  .section .head .count {
+    background: #1f2a30; color: var(--dim); padding: 1px 6px; border-radius: 8px; font-size: 10px;
+  }
+  .section .head .clear { margin-left: auto; color: var(--mute); font-size: 10px; cursor: pointer; }
+
+  .patches { padding: 6px 8px; display: flex; flex-direction: column; gap: 6px; }
+  .patch {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 7px 8px; border-radius: 3px;
+    font-size: 11px; line-height: 1.5;
+  }
+  .patch:hover { background: rgba(255,255,255,0.025); }
+  .patch.proposed { background: rgba(74, 222, 128, 0.06); border-left: 2px solid var(--diff-add-fg); padding-left: 8px; }
+  .patch .glyph { color: var(--mute); flex: 0 0 14px; font-size: 11px; }
+  .patch.proposed .glyph { color: var(--diff-add-fg); }
+  .patch .text { flex: 1; }
+  .patch .text .prompt { color: var(--text); }
+  .patch .text .meta { color: var(--mute); font-size: 10px; margin-top: 2px; }
+  .patch .text .meta .ok { color: var(--diff-add-fg); }
+  .patch .text .meta .pending { color: var(--yellow); }
+  .patch .actions { display: flex; gap: 4px; flex: 0 0 auto; align-self: center; }
+  .patch .actions button {
+    background: transparent; border: 1px solid #2a3340; color: var(--dim);
+    font: inherit; font-size: 10px; padding: 2px 8px; cursor: pointer; border-radius: 2px;
+  }
+  .patch .actions .accept { color: var(--diff-add-fg); border-color: #2a5a3a; }
+  .patch .actions .reject { color: var(--red); }
+
+  /* Footer */
+  .footer-note {
+    margin-top: auto; color: var(--mute); font-size: 10px;
+    border-top: 1px solid #1f1f1f; padding-top: 8px;
+  }
+</style>
+
+<div id="app">
+
+  <!-- ============== LEFT: editor ============== -->
+  <div id="left">
+
+    <!-- Multi-file patch banner -->
+    <div class="banner">
+      <span class="spark">✦</span>
+      <div class="body">
+        <div class="title"><b>AI suggests 3 changes across 2 files.</b> Reviewing inline in <code>scene.xml</code>.</div>
+        <div class="files">
+          <span>scene.xml</span> <span class="add">+5</span>
+          &nbsp;·&nbsp;
+          <span>scripts/explode-orbiter.tick.lua</span> <span class="new">new</span> <span class="add">+24</span>
+        </div>
+      </div>
+      <div class="keys">
+        <kbd class="accent">Tab</kbd><span style="color:var(--mute);font-size:10px;">accept</span>
+        <kbd>Esc</kbd><span style="color:var(--mute);font-size:10px;">reject</span>
+        <kbd>⌘↵</kbd><span style="color:var(--mute);font-size:10px;">refine</span>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div id="tabs">
+      <button class="tab active">scene.xml<span class="mod">●</span></button>
+      <button class="tab">components/orbiter.synth.xml</button>
+      <button class="tab">scripts/orbiter.tick.lua</button>
+      <button class="tab">scripts/explode-orbiter.tick.lua<span class="dot" title="new"></span></button>
+    </div>
+
+    <!-- Editor with selection + ghost-text -->
+    <div id="editor-shell">
+      <div id="editor">
+
+<div class="ln"><div class="gutter">1</div><div class="src"><span class="punct">&lt;?</span><span class="tag">xml</span> <span class="attr">version</span><span class="punct">=</span><span class="str">"1.0"</span> <span class="attr">encoding</span><span class="punct">=</span><span class="str">"UTF-8"</span><span class="punct">?&gt;</span></div></div>
+<div class="ln"><div class="gutter">2</div><div class="src"><span class="punct">&lt;</span><span class="tag">synth</span> <span class="attr">version</span><span class="punct">=</span><span class="str">"1.0"</span><span class="punct">&gt;</span></div></div>
+<div class="ln"><div class="gutter">3</div><div class="src"><span class="punct">&lt;</span><span class="tag">scene</span> <span class="attr">id</span><span class="punct">=</span><span class="str">"orbital"</span> <span class="attr">name</span><span class="punct">=</span><span class="str">"Orbital Demo"</span><span class="punct">&gt;</span></div></div>
+<div class="ln"><div class="gutter">4</div><div class="src"> </div></div>
+<div class="ln"><div class="gutter">5</div><div class="src">    <span class="punct">&lt;</span><span class="tag">entities</span><span class="punct">&gt;</span></div></div>
+<div class="ln"><div class="gutter">6</div><div class="src"> </div></div>
+<div class="ln"><div class="gutter">7</div><div class="src">        <span class="comm">&lt;!-- ambient + sun + center omitted for clarity --&gt;</span></div></div>
+<div class="ln"><div class="gutter">8</div><div class="src"> </div></div>
+
+<!-- ===== Selected range ===== -->
+<div class="ln selected"><div class="gutter">9</div><div class="src">        <span class="punct">&lt;</span><span class="tag">entity</span> <span class="attr">id</span><span class="punct">=</span><span class="str">"orbiter-a"</span> <span class="attr">componentRef</span><span class="punct">=</span><span class="str">"components/orbiter.synth.xml"</span><span class="punct">&gt;</span></div></div>
+<div class="ln selected"><div class="gutter">10</div><div class="src">            <span class="punct">&lt;</span><span class="tag">transform</span> <span class="attr">position</span><span class="punct">=</span><span class="str">"3,0,0"</span> <span class="attr">scale</span><span class="punct">=</span><span class="str">"0.6,0.6,0.6"</span><span class="punct">/&gt;</span></div></div>
+<div class="ln selected"><div class="gutter">11</div><div class="src">            <span class="punct">&lt;</span><span class="tag">components</span><span class="punct">&gt;</span></div></div>
+<div class="ln selected"><div class="gutter">12</div><div class="src">                <span class="punct">&lt;</span><span class="tag">mesh</span> <span class="attr">shape</span><span class="punct">=</span><span class="str">"sphere"</span> <span class="attr">color</span><span class="punct">=</span><span class="str">"#ff6b6b"</span><span class="punct">/&gt;</span></div></div>
+
+<!-- ===== Ghost-text additions inside selection ===== -->
+<div class="ln ghost"><div class="gutter">+</div><div class="src">                <span class="tag">&lt;collider</span> <span class="attr">shape</span><span class="punct">=</span><span class="str">"sphere"</span> <span class="attr">radius</span><span class="punct">=</span><span class="str">"0.6"</span><span class="punct">/&gt;</span></div></div>
+<div class="ln ghost"><div class="gutter">+</div><div class="src">                <span class="tag">&lt;on_event</span> <span class="attr">name</span><span class="punct">=</span><span class="str">"collide"</span> <span class="attr">with</span><span class="punct">=</span><span class="str">"center"</span><span class="punct">&gt;</span></div></div>
+<div class="ln ghost"><div class="gutter">+</div><div class="src">                    <span class="tag">&lt;effect</span> <span class="attr">type</span><span class="punct">=</span><span class="str">"explode"</span> <span class="attr">radius</span><span class="punct">=</span><span class="str">"1.2"</span> <span class="attr">color</span><span class="punct">=</span><span class="str">"#ff6b6b"</span><span class="punct">/&gt;</span></div></div>
+<div class="ln ghost"><div class="gutter">+</div><div class="src">                    <span class="tag">&lt;despawn</span><span class="punct">/&gt;</span></div></div>
+<div class="ln ghost"><div class="gutter">+</div><div class="src">                <span class="tag">&lt;/on_event&gt;</span></div></div>
+
+<div class="ln selected"><div class="gutter">13</div><div class="src">            <span class="punct">&lt;/</span><span class="tag">components</span><span class="punct">&gt;</span></div></div>
+<div class="ln selected"><div class="gutter">14</div><div class="src">            <span class="punct">&lt;</span><span class="tag">script</span> <span class="attr">uri</span><span class="punct">=</span><span class="str">"scripts/explode-orbiter.tick.lua"</span><span class="punct">/&gt;</span></div></div>
+<div class="ln selected"><div class="gutter">15</div><div class="src">        <span class="punct">&lt;/</span><span class="tag">entity</span><span class="punct">&gt;</span></div></div>
+
+<div class="ln"><div class="gutter">16</div><div class="src"> </div></div>
+<div class="ln"><div class="gutter">17</div><div class="src">        <span class="comm">&lt;!-- orbiter-b, orbiter-c unchanged --&gt;</span></div></div>
+<div class="ln"><div class="gutter">18</div><div class="src"> </div></div>
+<div class="ln"><div class="gutter">19</div><div class="src">    <span class="punct">&lt;/</span><span class="tag">entities</span><span class="punct">&gt;</span></div></div>
+<div class="ln"><div class="gutter">20</div><div class="src"> </div></div>
+<div class="ln"><div class="gutter">21</div><div class="src"><span class="punct">&lt;/</span><span class="tag">scene</span><span class="punct">&gt;</span></div></div>
+<div class="ln"><div class="gutter">22</div><div class="src"><span class="punct">&lt;/</span><span class="tag">synth</span><span class="punct">&gt;</span></div></div>
+
+      </div>
+
+      <!-- Floating Cmd+K prompt -->
+      <div class="cmdk">
+        <div class="row">
+          <span class="icon">⌘K</span>
+          <div class="prompt">make orbiter-a explode on contact with the center<span class="caret"></span></div>
+          <div class="meta">
+            <kbd>↵</kbd> generate
+          </div>
+        </div>
+        <div class="hint">
+          <span class="ai">claude-sonnet-4-6 · 1.2s · 3 hunks proposed</span>
+          <span>scope: <b style="color:var(--text);font-weight:500;">selection</b> · <span style="color:var(--mute);">whole-file</span> · <span style="color:var(--mute);">scene</span></span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ============== RIGHT: preview + history ============== -->
+  <div id="right">
+    <div id="toolbar">
+      <button id="run">▶ Run</button>
+      <span id="status"><span class="live">running</span> · 5 entities · paused for review</span>
+      <h1 class="title"><a href="index.html">poc-09 / B — Inline Cmd+K</a></h1>
+    </div>
+
+    <div id="canvas-wrap">
+      <div class="grid"></div>
+      <div class="center"></div>
+      <div class="orbiter o-a"></div>
+      <div class="orbiter o-b"></div>
+      <div class="orbiter o-c"></div>
+      <div class="ghost-entity"></div>
+      <div class="stamp">preview frozen · t=4.21s</div>
+    </div>
+
+    <!-- Patch history -->
+    <div class="section">
+      <div class="head">
+        <span>AI patch history</span>
+        <span class="count">7</span>
+        <span class="clear">clear ▾</span>
+      </div>
+      <div class="patches">
+
+        <div class="patch proposed">
+          <span class="glyph">▸</span>
+          <div class="text">
+            <div class="prompt">make orbiter-a explode on contact with the center</div>
+            <div class="meta">2 files · +29 lines · <span class="pending">awaiting review</span></div>
+          </div>
+          <div class="actions">
+            <button class="accept">accept</button>
+            <button class="reject">reject</button>
+          </div>
+        </div>
+
+        <div class="patch">
+          <span class="glyph">✓</span>
+          <div class="text">
+            <div class="prompt">add a third orbiter with purple color</div>
+            <div class="meta">scene.xml · +6 lines · <span class="ok">accepted 3 min ago</span></div>
+          </div>
+        </div>
+
+        <div class="patch">
+          <span class="glyph">✓</span>
+          <div class="text">
+            <div class="prompt">make the center sphere pulse with a sine wave</div>
+            <div class="meta">scripts/center.tick.lua · +11 lines · <span class="ok">accepted 8 min ago</span></div>
+          </div>
+        </div>
+
+        <div class="patch">
+          <span class="glyph">↺</span>
+          <div class="text">
+            <div class="prompt">use cubic easing for orbits</div>
+            <div class="meta" style="color:#a87;">reverted · poor visual result</div>
+          </div>
+        </div>
+
+        <div class="patch">
+          <span class="glyph">✓</span>
+          <div class="text">
+            <div class="prompt">extract orbit logic into a reusable component</div>
+            <div class="meta">3 files · refactor · <span class="ok">accepted 22 min ago</span></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="footer-note">
+      <b style="color:var(--text);font-weight:500;">Hypothese B.</b>
+      Cmd+K wirkt auf Selektion, AI patcht surgically über mehrere Dateien.
+      Banner macht Multi-File-Effekt sichtbar, Patch-History erlaubt Revert
+      und Pattern-Erkennung. Editor bleibt zentral, Patch-Struktur unter
+      der Oberfläche.
+    </div>
+
+  </div>
+</div>
+
+<script>
+  // Tab clicks just visually switch — no real model swap (static mock).
+  for (const tab of document.querySelectorAll('.tab')) {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+    });
+  }
+  // Accept/reject affordance only (no state change in static mock).
+  document.querySelectorAll('.patch .accept').forEach(b => {
+    b.addEventListener('click', () => {
+      const p = b.closest('.patch');
+      p.classList.remove('proposed');
+      p.querySelector('.glyph').textContent = '✓';
+      p.querySelector('.meta').innerHTML = '2 files · +29 lines · <span class="ok">just accepted</span>';
+      b.parentElement.remove();
+    });
+  });
+</script>

@@ -1,0 +1,736 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>poc-09 / D — Composable Worlds</title>
+<style>
+  :root {
+    --bg: #1a1a1a;
+    --panel: #161616;
+    --deep: #0e1116;
+    --chrome: #141821;
+    --border: #2a2a2a;
+    --text: #ddd;
+    --dim: #889;
+    --mute: #556;
+    --teal: #4ecdc4;
+    --yellow: #ffe66d;
+    --red: #ff6b6b;
+    --purple: #a78bfa;
+    --green: #4ade80;
+    --orange: #ffa657;
+  }
+
+  * { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: #2a2f3a transparent; }
+  *::-webkit-scrollbar { width: 8px; height: 8px; }
+  *::-webkit-scrollbar-thumb { background: #2a2f3a; border-radius: 4px; }
+
+  html, body {
+    margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+  }
+  #app {
+    display: grid;
+    grid-template-columns: 1fr 420px;
+    grid-template-rows: 56px auto 1fr;
+    height: 100vh;
+  }
+
+  /* ===== Top bar ===== */
+  #topbar {
+    grid-column: 1 / -1;
+    display: flex; align-items: center; gap: 14px;
+    padding: 0 18px; background: var(--chrome);
+    border-bottom: 1px solid var(--border);
+  }
+  #topbar .brand { color: #fff; font-size: 13px; font-weight: 500; }
+  #topbar .brand .sub { color: var(--dim); font-weight: 400; margin-left: 6px; }
+  #topbar .search {
+    background: var(--deep); border: 1px solid #2a2a2a; color: var(--text);
+    padding: 6px 12px 6px 30px; border-radius: 3px; font: inherit; font-size: 12px;
+    width: 280px;
+    background-image: radial-gradient(circle, var(--mute) 2px, transparent 3px), linear-gradient(45deg, transparent 49%, var(--mute) 49%, var(--mute) 51%, transparent 51%);
+    background-repeat: no-repeat;
+    background-position: 9px 9px, 16px 14px;
+    background-size: 8px 8px, 5px 5px;
+  }
+  #topbar .spacer { flex: 1; }
+  #topbar .title-link { color: var(--mute); font-size: 11px; text-decoration: none; }
+  #topbar .title-link:hover { color: var(--teal); }
+
+  /* ===== Filters strip ===== */
+  #filters {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 18px; background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    grid-column: 1 / 2; grid-row: 2 / 3;
+  }
+  #filters .label { color: var(--mute); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; margin-right: 4px; }
+  #filters .chip {
+    background: var(--panel); border: 1px solid #2a2a2a; color: var(--dim);
+    padding: 4px 10px; border-radius: 12px; font-size: 11px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  #filters .chip:hover { color: var(--text); border-color: #3a3a3a; }
+  #filters .chip.active { background: rgba(78,205,196,0.1); border-color: var(--teal); color: var(--teal); }
+  #filters .chip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--mute); }
+  #filters .chip.scene .dot { background: var(--teal); }
+  #filters .chip.component .dot { background: var(--purple); }
+  #filters .chip.system .dot { background: var(--yellow); }
+  #filters .sep { width: 1px; height: 16px; background: var(--border); margin: 0 4px; }
+  #filters .count { margin-left: auto; color: var(--mute); font-size: 10px; }
+
+  /* ===== Cards grid ===== */
+  #library {
+    overflow: auto; padding: 16px 18px 18px;
+    grid-column: 1 / 2; grid-row: 3 / 4;
+    min-height: 0;
+  }
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px;
+  }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    overflow: hidden; cursor: pointer;
+    transition: border-color 120ms ease, transform 120ms ease;
+    position: relative; display: flex; flex-direction: column;
+  }
+  .card:hover { border-color: var(--teal); transform: translateY(-2px); }
+  .card .thumb {
+    position: relative; aspect-ratio: 16 / 10;
+    background: var(--deep);
+    overflow: hidden;
+  }
+  .card .thumb .grid-bg {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+    background-size: 18px 18px;
+  }
+  .card .type-badge {
+    position: absolute; top: 8px; left: 8px;
+    background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+    color: var(--text); padding: 2px 7px; border-radius: 10px;
+    font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .card .type-badge .dot { width: 5px; height: 5px; border-radius: 50%; }
+  .card .type-badge.scene .dot { background: var(--teal); }
+  .card .type-badge.scene { color: var(--teal); }
+  .card .type-badge.component .dot { background: var(--purple); }
+  .card .type-badge.component { color: var(--purple); }
+  .card .type-badge.system .dot { background: var(--yellow); }
+  .card .type-badge.system { color: var(--yellow); }
+
+  .card .remix-btn {
+    position: absolute; top: 8px; right: 8px;
+    background: var(--teal); color: var(--bg); border: 0;
+    padding: 3px 9px; border-radius: 12px; font: inherit; font-size: 10px;
+    font-weight: 600; cursor: pointer;
+    opacity: 0; transform: translateY(-2px);
+    transition: opacity 120ms, transform 120ms;
+  }
+  .card:hover .remix-btn { opacity: 1; transform: translateY(0); }
+  .card .remix-btn:hover { background: #6ee0d7; }
+
+  .card .body { padding: 10px 12px; flex: 1; display: flex; flex-direction: column; gap: 6px; }
+  .card .body .name { color: #fff; font-size: 12px; font-weight: 500; }
+  .card .body .desc { color: var(--dim); font-size: 10px; line-height: 1.45; min-height: 28px; }
+  .card .body .tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+  .card .body .tag {
+    color: var(--mute); font-size: 9px; padding: 1px 6px;
+    background: rgba(255,255,255,0.03); border-radius: 8px;
+  }
+  .card .body .stats {
+    display: flex; gap: 10px; margin-top: auto; padding-top: 8px;
+    border-top: 1px solid #1f1f1f;
+    color: var(--mute); font-size: 10px;
+  }
+  .card .body .stats span { display: inline-flex; align-items: center; gap: 4px; }
+  .card .body .stats span b { color: var(--dim); font-weight: 500; }
+
+  /* ----- thumbnail visuals (CSS-only) ----- */
+  /* Orbital */
+  .thumb.orbital .sun { position: absolute; left: 50%; top: 50%; width: 26px; height: 26px; margin: -13px 0 0 -13px; border-radius: 50%; background: radial-gradient(circle, #fff4b0, var(--yellow) 60%, #7a6420); box-shadow: 0 0 20px rgba(255,230,109,0.5); }
+  .thumb.orbital .orb { position: absolute; border-radius: 50%; }
+  .thumb.orbital .orb.a { left: 75%; top: 50%; width: 8px; height: 8px; margin: -4px 0 0 -4px; background: var(--red); box-shadow: 0 0 8px var(--red); }
+  .thumb.orbital .orb.b { left: 22%; top: 64%; width: 6px; height: 6px; margin: -3px 0 0 -3px; background: var(--teal); box-shadow: 0 0 8px var(--teal); }
+  .thumb.orbital .orb.c { left: 60%; top: 22%; width: 5px; height: 5px; background: var(--purple); box-shadow: 0 0 8px var(--purple); }
+  .thumb.orbital .ring { position: absolute; left: 50%; top: 50%; border: 1px dashed rgba(255,255,255,0.08); border-radius: 50%; }
+  .thumb.orbital .ring.r1 { width: 80px; height: 80px; margin: -40px 0 0 -40px; }
+  .thumb.orbital .ring.r2 { width: 130px; height: 130px; margin: -65px 0 0 -65px; }
+
+  /* Tower defense */
+  .thumb.td .path { position: absolute; left: 8%; right: 8%; top: 35%; height: 14px; background: #3a3a4a; border-radius: 7px; }
+  .thumb.td .path::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: repeating-linear-gradient(90deg, var(--bg) 0 4px, transparent 4px 8px); transform: translateY(-50%); }
+  .thumb.td .twr { position: absolute; width: 12px; height: 12px; background: linear-gradient(135deg, #4a4a5a, #2a2a3a); border: 1px solid #6a6a8a; }
+  .thumb.td .twr.t1 { left: 22%; top: 18%; }
+  .thumb.td .twr.t2 { left: 50%; top: 60%; }
+  .thumb.td .twr.t3 { left: 78%; top: 22%; }
+  .thumb.td .e { position: absolute; width: 8px; height: 8px; border-radius: 50%; background: var(--red); box-shadow: 0 0 6px var(--red); top: calc(35% + 3px); }
+  .thumb.td .e1 { left: 30%; }
+  .thumb.td .e2 { left: 48%; }
+  .thumb.td .e3 { left: 66%; }
+
+  /* Forest path */
+  .thumb.forest { background: linear-gradient(180deg, #0e1416 0%, #0a1a14 100%); }
+  .thumb.forest .ground { position: absolute; left: 0; right: 0; bottom: 0; height: 30%; background: linear-gradient(180deg, transparent, #0a1410); }
+  .thumb.forest .tree { position: absolute; width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 18px solid #2a5a3a; }
+  .thumb.forest .tree.a { left: 18%; bottom: 25%; }
+  .thumb.forest .tree.b { left: 32%; bottom: 22%; transform: scale(0.7); }
+  .thumb.forest .tree.c { left: 64%; bottom: 24%; transform: scale(1.2); }
+  .thumb.forest .tree.d { left: 80%; bottom: 26%; transform: scale(0.8); }
+  .thumb.forest .moon { position: absolute; right: 16%; top: 18%; width: 14px; height: 14px; border-radius: 50%; background: #d8d8e8; box-shadow: 0 0 14px rgba(216,216,232,0.4); }
+
+  /* Racing */
+  .thumb.racing { background: linear-gradient(180deg, #1a1418 0%, #0e0a10 100%); }
+  .thumb.racing .track { position: absolute; left: 6%; right: 6%; top: 30%; bottom: 20%; border: 6px solid #3a3a4a; border-radius: 50%/40px; }
+  .thumb.racing .track::after { content: ""; position: absolute; inset: -3px; border: 1px dashed rgba(255,230,109,0.4); border-radius: inherit; }
+  .thumb.racing .car { position: absolute; width: 8px; height: 12px; border-radius: 2px; }
+  .thumb.racing .car.a { background: var(--red); left: 18%; top: 50%; box-shadow: 0 0 6px var(--red); }
+  .thumb.racing .car.b { background: var(--teal); left: 70%; top: 40%; box-shadow: 0 0 6px var(--teal); }
+
+  /* Dialogue */
+  .thumb.dialogue { background: linear-gradient(180deg, #14101a 0%, #0a0814 100%); }
+  .thumb.dialogue .node { position: absolute; padding: 4px 7px; background: rgba(167,139,250,0.1); border: 1px solid var(--purple); border-radius: 3px; font-size: 8px; color: var(--purple); }
+  .thumb.dialogue .node.a { left: 12%; top: 18%; }
+  .thumb.dialogue .node.b { left: 14%; top: 60%; }
+  .thumb.dialogue .node.c { left: 60%; top: 30%; }
+  .thumb.dialogue .node.d { left: 62%; top: 70%; }
+  .thumb.dialogue .edge { position: absolute; height: 1px; background: rgba(167,139,250,0.3); transform-origin: 0 50%; }
+  .thumb.dialogue .edge.ab { left: 24%; top: 30%; width: 42%; transform: rotate(12deg); }
+  .thumb.dialogue .edge.cd { left: 28%; top: 66%; width: 42%; transform: rotate(-8deg); }
+
+  /* Component thumbnails (icon-style) */
+  .thumb.cmp { background: var(--deep); display: grid; place-items: center; }
+  .thumb.cmp .icon-box {
+    width: 70%; height: 70%; border: 1.5px dashed rgba(167,139,250,0.4);
+    border-radius: 4px; display: grid; place-items: center;
+    color: var(--purple); font-size: 22px;
+  }
+  .thumb.cmp.chase .icon-box { color: var(--red); border-color: rgba(255,107,107,0.4); }
+  .thumb.cmp.explode .icon-box { color: var(--orange); border-color: rgba(255,166,87,0.4); }
+  .thumb.cmp.orbit .icon-box { color: var(--teal); border-color: rgba(78,205,196,0.4); }
+
+  /* ===== Remix lab (right column) ===== */
+  #remix {
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    overflow: auto;
+    grid-column: 2 / 3; grid-row: 2 / 4;
+    min-height: 0;
+  }
+  .remix-head {
+    padding: 14px 16px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .remix-head h2 { font-size: 13px; font-weight: 500; color: #fff; margin: 0; }
+  .remix-head h2 .accent { color: var(--purple); }
+  .remix-head .badge {
+    margin-left: auto; background: rgba(167,139,250,0.1); color: var(--purple);
+    padding: 2px 8px; border-radius: 10px; font-size: 10px;
+  }
+
+  .remix-section { padding: 14px 16px; border-bottom: 1px solid #1f1f1f; }
+  .remix-section h3 {
+    font-size: 10px; font-weight: 600; color: var(--dim);
+    text-transform: uppercase; letter-spacing: 0.08em; margin: 0 0 10px;
+  }
+
+  /* Slot system */
+  .slots { display: flex; align-items: center; gap: 6px; }
+  .slot {
+    flex: 1; aspect-ratio: 16 / 10; border-radius: 3px;
+    background: var(--deep); border: 1px dashed #2a3340; position: relative;
+    overflow: hidden;
+  }
+  .slot.filled { border-style: solid; border-color: var(--teal); }
+  .slot .empty {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    color: var(--mute); font-size: 10px; text-align: center; padding: 8px;
+  }
+  .slot .filled-label {
+    position: absolute; left: 6px; bottom: 6px; right: 6px;
+    color: var(--text); font-size: 10px;
+    background: rgba(0,0,0,0.5); padding: 2px 6px; border-radius: 2px;
+  }
+  .slot .clear-x {
+    position: absolute; top: 4px; right: 4px;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: rgba(0,0,0,0.5); color: var(--dim);
+    display: grid; place-items: center; font-size: 11px; cursor: pointer;
+  }
+  .slot .clear-x:hover { color: var(--text); }
+  .slot.filled .grid-bg {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+    background-size: 14px 14px;
+  }
+  .slot.orbital .sun { position: absolute; left: 50%; top: 50%; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; background: radial-gradient(circle, #fff4b0, var(--yellow) 60%, #7a6420); }
+  .slot.orbital .orb { position: absolute; left: 75%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--red); }
+  .slot.td .path { position: absolute; left: 8%; right: 8%; top: 40%; height: 8px; background: #3a3a4a; border-radius: 4px; }
+  .slot.td .twr { position: absolute; width: 8px; height: 8px; background: #5a5a7a; }
+  .slot.td .twr.a { left: 30%; top: 20%; }
+  .slot.td .twr.b { left: 60%; top: 60%; }
+
+  .plus {
+    color: var(--mute); font-size: 18px; flex: 0 0 16px; text-align: center;
+  }
+
+  /* Suggestion chips */
+  .suggestions { display: flex; flex-direction: column; gap: 6px; }
+  .sugg {
+    background: var(--deep); border: 1px solid #2a2a2a; border-left: 2px solid var(--purple);
+    padding: 8px 10px; border-radius: 2px; cursor: pointer;
+    color: var(--text); font-size: 11px; line-height: 1.5;
+    display: flex; align-items: flex-start; gap: 8px;
+  }
+  .sugg:hover { background: rgba(167,139,250,0.06); border-left-color: var(--teal); }
+  .sugg .spark { color: var(--purple); flex: 0 0 14px; }
+  .sugg .text { flex: 1; }
+  .sugg .text .meta { color: var(--mute); font-size: 10px; margin-top: 3px; }
+
+  /* Preview */
+  .preview-frame {
+    position: relative; aspect-ratio: 16 / 10;
+    background: var(--deep); border: 1px solid #2a2a2a; overflow: hidden;
+  }
+  .preview-frame .grid-bg {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+    background-size: 18px 18px;
+  }
+  /* Mock fusion: towers in orbital pattern around center */
+  .preview-frame .center { position: absolute; left: 50%; top: 50%; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; background: radial-gradient(circle, #fff4b0, var(--yellow) 60%, #7a6420); }
+  .preview-frame .ring { position: absolute; left: 50%; top: 50%; width: 130px; height: 130px; margin: -65px 0 0 -65px; border: 1px dashed rgba(78,205,196,0.3); border-radius: 50%; }
+  .preview-frame .ring.outer { width: 200px; height: 200px; margin: -100px 0 0 -100px; border-color: rgba(255,107,107,0.2); }
+  .preview-frame .otower { position: absolute; width: 10px; height: 10px; background: linear-gradient(135deg, #4a4a5a, #2a2a3a); border: 1px solid #6a6a8a; }
+  .preview-frame .otower.a { left: calc(50% + 60px); top: calc(50% - 5px); }
+  .preview-frame .otower.b { left: calc(50% - 70px); top: calc(50% + 5px); }
+  .preview-frame .otower.c { left: calc(50% + 10px); top: calc(50% - 70px); }
+  .preview-frame .oenemy { position: absolute; width: 6px; height: 6px; border-radius: 50%; background: var(--red); box-shadow: 0 0 6px var(--red); }
+  .preview-frame .oenemy.a { left: calc(50% + 95px); top: calc(50% + 60px); }
+  .preview-frame .oenemy.b { left: calc(50% - 105px); top: calc(50% - 30px); }
+  .preview-frame .stamp { position: absolute; bottom: 6px; left: 8px; right: 8px; display: flex; justify-content: space-between; color: var(--mute); font-size: 9px; }
+  .preview-frame .stamp .live { color: var(--green); }
+  .preview-frame .stamp .live::before { content: "● "; }
+
+  /* Prompt input */
+  .prompt-row {
+    display: flex; gap: 6px; margin-top: 10px;
+  }
+  .prompt-input {
+    flex: 1; background: var(--deep); border: 1px solid #2a2a2a;
+    color: var(--text); padding: 8px 12px; border-radius: 3px;
+    font: inherit; font-size: 11px;
+  }
+  .prompt-input:focus { outline: 1px solid var(--teal); border-color: var(--teal); }
+  .prompt-btn {
+    background: var(--purple); color: #1a1a1a; border: 0;
+    padding: 8px 14px; font: inherit; font-weight: 600; font-size: 11px;
+    cursor: pointer; border-radius: 3px;
+  }
+  .prompt-btn:hover { background: #b89bff; }
+
+  /* Combine button */
+  .combine-btn {
+    background: var(--teal); color: var(--bg); border: 0;
+    padding: 10px 16px; font: inherit; font-weight: 600; font-size: 12px;
+    cursor: pointer; border-radius: 3px; width: 100%; margin-top: 10px;
+  }
+  .combine-btn:hover { background: #6ee0d7; }
+  .combine-btn .arrow { margin-left: 4px; }
+
+  .footer-note {
+    padding: 14px 16px; color: var(--mute); font-size: 10px; line-height: 1.6;
+    margin-top: auto;
+  }
+</style>
+
+<div id="app">
+
+  <!-- ===== Top bar ===== -->
+  <div id="topbar">
+    <div class="brand">Cryolite Library<span class="sub">/ Composable Worlds</span></div>
+    <input class="search" type="text" placeholder="search scenes, components, mechanics…" value="" />
+    <div class="spacer"></div>
+    <a class="title-link" href="index.html">poc-09 / D — Composable Worlds</a>
+  </div>
+
+  <!-- ===== Filters strip ===== -->
+  <div id="filters">
+    <span class="label">Type</span>
+    <span class="chip active">All</span>
+    <span class="chip scene"><span class="dot"></span>Scenes</span>
+    <span class="chip component"><span class="dot"></span>Components</span>
+    <span class="chip system"><span class="dot"></span>Systems</span>
+    <span class="sep"></span>
+    <span class="label">Genre</span>
+    <span class="chip">Tower Defense</span>
+    <span class="chip">Racing</span>
+    <span class="chip">Roguelike</span>
+    <span class="chip">Puzzle</span>
+    <span class="chip">Dialogue</span>
+    <span class="count">9 of 142 shown</span>
+  </div>
+
+  <!-- ===== Library grid ===== -->
+  <div id="library">
+    <div class="grid">
+
+      <!-- Scene: Orbital Demo -->
+      <div class="card" data-name="Orbital Demo">
+        <div class="thumb orbital">
+          <div class="grid-bg"></div>
+          <div class="ring r1"></div>
+          <div class="ring r2"></div>
+          <div class="sun"></div>
+          <div class="orb a"></div>
+          <div class="orb b"></div>
+          <div class="orb c"></div>
+          <span class="type-badge scene"><span class="dot"></span>Scene</span>
+          <button class="remix-btn">↪ Remix</button>
+        </div>
+        <div class="body">
+          <div class="name">Orbital Demo</div>
+          <div class="desc">3 orbiters around a pulsing center. Reference for the orbit component.</div>
+          <div class="tags">
+            <span class="tag">ecs</span><span class="tag">orbit</span><span class="tag">demo</span>
+          </div>
+          <div class="stats">
+            <span><b>5</b> entities</span><span><b>3</b> components</span><span><b>2</b> scripts</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scene: Tower Defense -->
+      <div class="card" data-name="Tower Defense — Wave 3">
+        <div class="thumb td">
+          <div class="grid-bg"></div>
+          <div class="path"></div>
+          <div class="twr t1"></div>
+          <div class="twr t2"></div>
+          <div class="twr t3"></div>
+          <div class="e e1"></div>
+          <div class="e e2"></div>
+          <div class="e e3"></div>
+          <span class="type-badge scene"><span class="dot"></span>Scene</span>
+          <button class="remix-btn">↪ Remix</button>
+        </div>
+        <div class="body">
+          <div class="name">Tower Defense — Wave 3</div>
+          <div class="desc">Linear path, 3 towers, spawner on the left, base on the right.</div>
+          <div class="tags">
+            <span class="tag">tower-defense</span><span class="tag">wave</span><span class="tag">economy</span>
+          </div>
+          <div class="stats">
+            <span><b>14</b> entities</span><span><b>9</b> components</span><span><b>4</b> scripts</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scene: Forest Path -->
+      <div class="card" data-name="Forest Path">
+        <div class="thumb forest">
+          <div class="moon"></div>
+          <div class="ground"></div>
+          <div class="tree a"></div>
+          <div class="tree b"></div>
+          <div class="tree c"></div>
+          <div class="tree d"></div>
+          <span class="type-badge scene"><span class="dot"></span>Scene</span>
+          <button class="remix-btn">↪ Remix</button>
+        </div>
+        <div class="body">
+          <div class="name">Forest Path</div>
+          <div class="desc">Atmospheric exploration scaffold. Ambient light, parallax trees, soft fog.</div>
+          <div class="tags">
+            <span class="tag">exploration</span><span class="tag">ambient</span><span class="tag">parallax</span>
+          </div>
+          <div class="stats">
+            <span><b>22</b> entities</span><span><b>6</b> components</span><span><b>3</b> scripts</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scene: Racing Loop -->
+      <div class="card" data-name="Racing Loop">
+        <div class="thumb racing">
+          <div class="track"></div>
+          <div class="car a"></div>
+          <div class="car b"></div>
+          <span class="type-badge scene"><span class="dot"></span>Scene</span>
+          <button class="remix-btn">↪ Remix</button>
+        </div>
+        <div class="body">
+          <div class="name">Racing Loop</div>
+          <div class="desc">Oval track, 2 cars, lap counter. Drift and boost components included.</div>
+          <div class="tags">
+            <span class="tag">racing</span><span class="tag">physics</span><span class="tag">laps</span>
+          </div>
+          <div class="stats">
+            <span><b>11</b> entities</span><span><b>7</b> components</span><span><b>5</b> scripts</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scene: Dialogue Branch -->
+      <div class="card" data-name="Dialogue Branch">
+        <div class="thumb dialogue">
+          <div class="edge ab"></div>
+          <div class="edge cd"></div>
+          <div class="node a">START</div>
+          <div class="node b">choice_a</div>
+          <div class="node c">choice_b</div>
+          <div class="node d">end</div>
+          <span class="type-badge scene"><span class="dot"></span>Scene</span>
+          <button class="remix-btn">↪ Remix</button>
+        </div>
+        <div class="body">
+          <div class="name">Dialogue Branch</div>
+          <div class="desc">Branching dialogue scaffold with state machine + speaker portraits.</div>
+          <div class="tags">
+            <span class="tag">narrative</span><span class="tag">state-machine</span>
+          </div>
+          <div class="stats">
+            <span><b>8</b> entities</span><span><b>4</b> components</span><span><b>1</b> script</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Component: Orbiter -->
+      <div class="card" data-name="Orbiter">
+        <div class="thumb cmp orbit">
+          <div class="grid-bg"></div>
+          <div class="icon-box">↻</div>
+          <span class="type-badge component"><span class="dot"></span>Component</span>
+          <button class="remix-btn">↪ Remix</button>
+        </div>
+        <div class="body">
+          <div class="name">Orbiter</div>
+          <div class="desc">Orbits a target on configurable radius / speed / tilt.</div>
+          <div class="tags">
+            <span class="tag">motion</span><span class="tag">reusable</span>
+          </div>
+          <div class="stats">
+            <span><b>4</b> properties</span><span><b>1</b> script</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Component: Chase AI -->
+      <div class="card" data-name="Chase AI">
+        <div class="thumb cmp chase">
+          <div class="grid-bg"></div>
+          <div class="icon-box">→●</div>
+          <span class="type-badge component"><span class="dot"></span>Component</span>
+          <button class="remix-btn">↪ Remix</button>
+        </div>
+        <div class="body">
+          <div class="name">Chase AI</div>
+          <div class="desc">Pursues a target with steering + speed cap + optional give-up timer.</div>
+          <div class="tags">
+            <span class="tag">behavior</span><span class="tag">navigation</span>
+          </div>
+          <div class="stats">
+            <span><b>5</b> properties</span><span><b>1</b> script</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Component: Particle Explosion -->
+      <div class="card" data-name="Particle Explosion">
+        <div class="thumb cmp explode">
+          <div class="grid-bg"></div>
+          <div class="icon-box">✸</div>
+          <span class="type-badge component"><span class="dot"></span>Component</span>
+          <button class="remix-btn">↪ Remix</button>
+        </div>
+        <div class="body">
+          <div class="name">Particle Explosion</div>
+          <div class="desc">Burst particle emitter with falloff, color ramp and impulse.</div>
+          <div class="tags">
+            <span class="tag">vfx</span><span class="tag">particles</span>
+          </div>
+          <div class="stats">
+            <span><b>7</b> properties</span><span><b>0</b> scripts</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- System: Wave Director -->
+      <div class="card" data-name="Wave Director">
+        <div class="thumb cmp">
+          <div class="grid-bg"></div>
+          <div class="icon-box" style="color: var(--yellow); border-color: rgba(255,230,109,0.4);">⌬</div>
+          <span class="type-badge system"><span class="dot"></span>System</span>
+          <button class="remix-btn">↪ Remix</button>
+        </div>
+        <div class="body">
+          <div class="name">Wave Director</div>
+          <div class="desc">Spawn schedules, difficulty curves, boss triggers. Scene-level singleton.</div>
+          <div class="tags">
+            <span class="tag">system</span><span class="tag">spawner</span>
+          </div>
+          <div class="stats">
+            <span><b>9</b> properties</span><span><b>1</b> script</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ===== Remix lab ===== -->
+  <div id="remix">
+
+    <div class="remix-head">
+      <h2><span class="accent">✦</span> Remix Lab</h2>
+      <span class="badge">draft</span>
+    </div>
+
+    <div class="remix-section">
+      <h3>Combine two worlds</h3>
+      <div class="slots">
+        <div class="slot orbital filled">
+          <div class="grid-bg"></div>
+          <div class="sun"></div>
+          <div class="orb"></div>
+          <span class="filled-label">Orbital Demo</span>
+          <span class="clear-x">×</span>
+        </div>
+        <span class="plus">+</span>
+        <div class="slot td filled">
+          <div class="grid-bg"></div>
+          <div class="path"></div>
+          <div class="twr a"></div>
+          <div class="twr b"></div>
+          <span class="filled-label">Tower Defense</span>
+          <span class="clear-x">×</span>
+        </div>
+      </div>
+      <button class="combine-btn">Combine with AI <span class="arrow">→</span></button>
+    </div>
+
+    <div class="remix-section">
+      <h3>AI suggestions</h3>
+      <div class="suggestions">
+
+        <div class="sugg">
+          <span class="spark">✦</span>
+          <div class="text">
+            Towers orbit the center; enemies spawn from the outermost ring and spiral inward.
+            <div class="meta">reuses Orbiter · adds Spiral Path · 6 new entities</div>
+          </div>
+        </div>
+
+        <div class="sugg">
+          <span class="spark">✦</span>
+          <div class="text">
+            Static towers; enemies orbit at varying altitudes and dive at the base.
+            <div class="meta">reuses Wave Director · adds Dive Behavior · 4 new entities</div>
+          </div>
+        </div>
+
+        <div class="sugg">
+          <span class="spark">✦</span>
+          <div class="text">
+            Pulse-attack: every orbit completion fires a shockwave from the center.
+            <div class="meta">adds Pulse System · reuses Particle Explosion · 2 new entities</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="remix-section">
+      <h3>Preview</h3>
+      <div class="preview-frame">
+        <div class="grid-bg"></div>
+        <div class="ring outer"></div>
+        <div class="ring"></div>
+        <div class="center"></div>
+        <div class="otower a"></div>
+        <div class="otower b"></div>
+        <div class="otower c"></div>
+        <div class="oenemy a"></div>
+        <div class="oenemy b"></div>
+        <div class="stamp">
+          <span>"Towers orbit the center"</span>
+          <span class="live">running · t=2.4s</span>
+        </div>
+      </div>
+
+      <div class="prompt-row">
+        <input class="prompt-input" placeholder="or describe a remix — e.g. ‘make the racing track into a dialogue branch tree’" />
+        <button class="prompt-btn">Generate</button>
+      </div>
+    </div>
+
+    <div class="footer-note">
+      <b style="color:var(--text);font-weight:500;">Hypothese D.</b>
+      Szenen und Komponenten als versionierbare Artefakte in einer Library.
+      AI ist kein „Editor-Feature", sondern <em>Kombinator</em>: liest die
+      Schemas zweier Welten, schlägt Fusionen vor, baut sie aus
+      vorhandenen Bausteinen + minimaler neuer Klebe-XML zusammen.
+      Skaliert, weil jede neue Szene das Vokabular für künftige Remixes erweitert.
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // Filter chips: toggle visual active state (no real filtering).
+  document.querySelectorAll('#filters .chip').forEach(c => {
+    c.addEventListener('click', () => {
+      // Only the type group enforces single-select for the demo.
+      const isType = c.classList.contains('scene') || c.classList.contains('component')
+                  || c.classList.contains('system') || c.textContent.trim() === 'All';
+      if (isType) {
+        document.querySelectorAll('#filters .chip').forEach(o => {
+          if (o.classList.contains('scene') || o.classList.contains('component')
+              || o.classList.contains('system') || o.textContent.trim() === 'All') {
+            o.classList.remove('active');
+          }
+        });
+      }
+      c.classList.toggle('active');
+    });
+  });
+
+  // Card remix button drops it into the first empty slot (or replaces the second).
+  document.querySelectorAll('.card .remix-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const card = btn.closest('.card');
+      const name = card.dataset.name;
+      // Visual flash only.
+      btn.textContent = '✓ Added';
+      btn.style.background = '#4ade80';
+      setTimeout(() => { btn.textContent = '↪ Remix'; btn.style.background = ''; }, 1200);
+    });
+  });
+
+  // Clear slot button.
+  document.querySelectorAll('.slot .clear-x').forEach(x => {
+    x.addEventListener('click', () => {
+      const slot = x.closest('.slot');
+      slot.classList.remove('filled');
+      slot.innerHTML = '<div class="empty">drag a scene<br/>or click ↪ Remix on a card</div>';
+    });
+  });
+
+  // Suggestion click → flash combine button.
+  document.querySelectorAll('.sugg').forEach(s => {
+    s.addEventListener('click', () => {
+      const btn = document.querySelector('.combine-btn');
+      btn.textContent = '↻ Generating preview…';
+      setTimeout(() => { btn.innerHTML = 'Combine with AI <span class="arrow">→</span>'; }, 1400);
+    });
+  });
+</script>
