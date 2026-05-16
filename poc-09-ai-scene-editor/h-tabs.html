@@ -1,0 +1,796 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>poc-09 / H — Chat-driven with file-projection tabs</title>
+<style>
+  :root {
+    --bg: #1a1a1a;
+    --panel: #161616;
+    --deep: #0e1116;
+    --chrome: #141821;
+    --border: #2a2a2a;
+    --border-soft: #1f1f1f;
+    --text: #ddd;
+    --dim: #889;
+    --mute: #556;
+    --teal: #4ecdc4;
+    --yellow: #ffe66d;
+    --red: #ff6b6b;
+    --purple: #a78bfa;
+    --green: #6ee07a;
+    --magenta: #e879c5;
+
+    /* Syntax-highlight palette */
+    --code-tag:  #4ec9b0;
+    --code-attr: #9cdcfe;
+    --code-str:  #ce9178;
+    --code-num:  #b5cea8;
+    --code-kw:   #c586c0;
+    --code-cmt:  #6a7080;
+    --code-id:   #4ecdc4;
+  }
+
+  * { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: #2a2f3a transparent; }
+  *::-webkit-scrollbar { width: 8px; height: 8px; }
+  *::-webkit-scrollbar-thumb { background: #2a2f3a; border-radius: 4px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+
+  html, body {
+    margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+  }
+  #app { display: grid; grid-template-columns: 420px 1fr; height: 100vh; }
+
+  /* ---------- LEFT: chat ---------- */
+  #chat { display: flex; flex-direction: column; min-width: 0; border-right: 1px solid var(--border); background: var(--panel); }
+
+  .chat-head {
+    padding: 14px 18px; border-bottom: 1px solid var(--border-soft);
+    color: var(--dim); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+  }
+  .chat-head b { color: var(--magenta); font-weight: 500; }
+  .chat-head .live { color: var(--green); margin-left: 8px; }
+  .chat-head .live::before { content: "● "; }
+
+  #thread { flex: 1; overflow: auto; padding: 18px 18px 24px; min-height: 0; }
+  .msg { margin-bottom: 22px; line-height: 1.6; }
+  .msg .who {
+    font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--mute); margin-bottom: 6px;
+  }
+  .msg.you .who { color: var(--dim); }
+  .msg.ai  .who { color: var(--magenta); }
+  .msg .body { color: var(--text); font-size: 12px; }
+  .msg .body .ref { color: var(--teal); }
+  .msg .body .tag {
+    color: var(--magenta); background: #2a162a; border: 1px solid #4a2842;
+    padding: 0 5px; border-radius: 2px; font-size: 10px;
+  }
+  .msg.thinking .body { color: var(--mute); font-style: italic; }
+  .msg.thinking .body::after {
+    content: "•••"; margin-left: 4px; letter-spacing: 2px;
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:0.3} 50%{opacity:1} }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .chip {
+    background: transparent; color: var(--text); border: 1px solid var(--border);
+    padding: 6px 10px; border-radius: 16px; font: inherit; font-size: 11px;
+    cursor: pointer; text-align: left;
+  }
+  .chip:hover { border-color: var(--magenta); color: var(--magenta); }
+  .chip:disabled { opacity: 0.4; cursor: default; }
+
+  #composer { padding: 12px; border-top: 1px solid var(--border-soft); background: var(--deep); }
+  #composer .box {
+    display: flex; gap: 8px; align-items: flex-end;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 8px 10px;
+  }
+  #composer textarea {
+    flex: 1; resize: none; min-height: 22px; max-height: 120px;
+    background: transparent; color: var(--text); border: 0; outline: none;
+    font: inherit; font-size: 12px; line-height: 1.5;
+  }
+  #composer textarea::placeholder { color: var(--mute); }
+  #composer button {
+    background: var(--magenta); color: var(--bg); border: 0;
+    padding: 6px 12px; border-radius: 3px; font: inherit; font-weight: 600; font-size: 11px;
+    cursor: pointer;
+  }
+  #composer button:hover { background: #f396dc; }
+  #composer button:disabled { background: #50304a; color: #99a; cursor: default; }
+  #composer .hint { margin-top: 6px; color: var(--mute); font-size: 10px; padding: 0 2px; }
+  #composer .hint code { color: var(--green); }
+
+  /* ---------- RIGHT: tabs + tab content + drawer ---------- */
+  #right { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+
+  /* Tab strip */
+  #tabs {
+    display: flex; align-items: stretch; gap: 2px;
+    background: var(--chrome); border-bottom: 1px solid var(--border);
+    padding: 8px 10px 0;
+  }
+  .tab {
+    background: transparent; color: var(--dim); border: 0;
+    padding: 9px 14px 10px; font: inherit; font-size: 11px; cursor: pointer;
+    white-space: nowrap; border-radius: 6px 6px 0 0; position: relative;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .tab:hover { color: var(--text); background: #1c2230; }
+  .tab.active { color: #fff; background: var(--bg); }
+  .tab.active::after {
+    content: ""; position: absolute; left: 8px; right: 8px; bottom: -1px;
+    height: 2px; background: var(--magenta); border-radius: 2px 2px 0 0;
+  }
+  .tab .kind {
+    font-size: 9px; padding: 1px 5px; border-radius: 2px;
+    background: #1f1f1f; color: var(--mute); letter-spacing: 0.05em;
+  }
+  .tab.scene .kind { color: var(--green); }
+  .tab.xml   .kind { color: var(--code-tag); }
+  .tab.lua   .kind { color: var(--code-kw); }
+  .tab.glsl  .kind { color: var(--yellow); }
+  .tab .ver-pill {
+    color: var(--mute); font-size: 9px; margin-left: 2px;
+  }
+
+  /* Tab content panes */
+  #panes { flex: 1; min-height: 0; position: relative; background: var(--bg); }
+  .pane {
+    position: absolute; inset: 0; display: none; flex-direction: column;
+    min-height: 0;
+  }
+  .pane.active { display: flex; }
+
+  /* "Scene" pane — preview bar + canvas */
+  .preview-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 16px; background: var(--chrome); border-bottom: 1px solid var(--border-soft);
+    color: var(--dim); font-size: 11px;
+  }
+  .preview-bar .left { display: flex; align-items: center; gap: 12px; }
+  .preview-bar .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .preview-bar .title { color: var(--text); }
+  .preview-bar .meta { color: var(--mute); }
+  .preview-bar .right { color: var(--mute); font-size: 10px; }
+
+  #stage {
+    flex: 1; min-height: 0; position: relative; overflow: hidden;
+    background: #0a0c10;
+    display: grid; place-items: center;
+  }
+  #canvas {
+    display: block;
+    background: #0a0c10;
+    max-width: 100%; max-height: 100%;
+  }
+
+  /* Code panes */
+  .code-head {
+    padding: 10px 16px; background: var(--chrome); border-bottom: 1px solid var(--border-soft);
+    color: var(--dim); font-size: 11px; display: flex; align-items: center; justify-content: space-between;
+  }
+  .code-head .path { color: var(--text); }
+  .code-head .path .dir { color: var(--mute); }
+  .code-head .badge {
+    background: #1a1a1a; color: var(--dim); border: 1px solid var(--border);
+    padding: 1px 6px; border-radius: 2px; font-size: 10px;
+  }
+  .code-head .badge.live   { color: var(--green); border-color: #234a30; background: #0e1a13; }
+  .code-head .badge.static { color: var(--dim); }
+
+  .code-body { flex: 1; min-height: 0; overflow: auto; }
+  pre.code {
+    margin: 0; padding: 14px 16px 24px;
+    font-size: 11.5px; line-height: 1.55; color: var(--text);
+    white-space: pre; tab-size: 2;
+  }
+  pre.code .tag  { color: var(--code-tag); }
+  pre.code .attr { color: var(--code-attr); }
+  pre.code .str  { color: var(--code-str); }
+  pre.code .num  { color: var(--code-num); }
+  pre.code .kw   { color: var(--code-kw); }
+  pre.code .cmt  { color: var(--code-cmt); font-style: italic; }
+  pre.code .id   { color: var(--code-id); }
+
+  /* Source drawer (graph-json projection) */
+  #drawer {
+    border-top: 1px solid var(--border); background: var(--deep);
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  #drawer .head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 16px; cursor: pointer; user-select: none;
+    color: var(--dim); font-size: 11px;
+  }
+  #drawer .head:hover { color: var(--text); }
+  #drawer .head .left { display: flex; align-items: center; gap: 8px; }
+  #drawer .head .chev { display: inline-block; transition: transform 120ms ease; color: var(--mute); }
+  #drawer .head .fmt { color: var(--teal); }
+  #drawer .head .badge {
+    background: #2a162a; color: var(--magenta); border: 1px solid #4a2842;
+    padding: 1px 6px; border-radius: 2px; font-size: 10px;
+  }
+  #drawer .head .ver { color: var(--mute); font-size: 10px; }
+  #drawer.open .head .chev { transform: rotate(90deg); }
+  #drawer .body { max-height: 0; overflow: hidden; transition: max-height 200ms ease; }
+  #drawer.open .body { max-height: 30vh; overflow: auto; }
+  #drawer pre { margin: 0; padding: 12px 16px 18px; font-size: 11px; line-height: 1.55; white-space: pre; tab-size: 2; }
+</style>
+
+<div id="app">
+
+  <div id="chat">
+    <div class="chat-head">
+      poc-09 / <b>H</b> &mdash; chat &rarr; engine + file tabs
+      <span class="live">running</span>
+    </div>
+    <div id="thread"></div>
+    <div id="composer">
+      <div class="box">
+        <textarea id="prompt" rows="1" placeholder="describe a change…"></textarea>
+        <button id="send" type="button">send</button>
+      </div>
+      <div class="hint">
+        files on the right are <em>projections</em> of the graph &middot; the graph is truth
+      </div>
+    </div>
+  </div>
+
+  <div id="right">
+
+    <!-- Tab strip -->
+    <div id="tabs">
+      <button class="tab scene active" data-tab="scene">
+        <span>scene</span><span class="kind">live</span>
+      </button>
+      <button class="tab xml" data-tab="xml">
+        <span>scene.xml</span><span class="kind">xml</span><span class="ver-pill" id="xml-ver"></span>
+      </button>
+      <button class="tab lua" data-tab="lua">
+        <span>scripts/orbit.lua</span><span class="kind">lua</span>
+      </button>
+      <button class="tab glsl" data-tab="glsl">
+        <span>shaders/glow.frag</span><span class="kind">glsl</span>
+      </button>
+    </div>
+
+    <!-- Tab content -->
+    <div id="panes">
+
+      <!-- Scene -->
+      <div class="pane active" data-pane="scene">
+        <div class="preview-bar">
+          <div class="left">
+            <span class="dot"></span>
+            <span class="title">scene:orbital</span>
+            <span class="meta" id="status-meta">1 nodes · 0 edges · version 1</span>
+          </div>
+          <div class="right">canvas2d · in-process tick</div>
+        </div>
+        <div id="stage">
+          <canvas id="canvas" width="800" height="600"></canvas>
+        </div>
+      </div>
+
+      <!-- scene.xml (live projection) -->
+      <div class="pane" data-pane="xml">
+        <div class="code-head">
+          <span class="path"><span class="dir">games/orbital/</span>scene.xml</span>
+          <span class="badge live">live projection · regenerated per graph version</span>
+        </div>
+        <div class="code-body"><pre class="code" id="code-xml"></pre></div>
+      </div>
+
+      <!-- orbit.lua (static reference) -->
+      <div class="pane" data-pane="lua">
+        <div class="code-head">
+          <span class="path"><span class="dir">games/orbital/scripts/</span>orbit.lua</span>
+          <span class="badge static">static · one script, shared by every orbiter</span>
+        </div>
+        <div class="code-body"><pre class="code" id="code-lua"></pre></div>
+      </div>
+
+      <!-- glow.frag (static reference) -->
+      <div class="pane" data-pane="glsl">
+        <div class="code-head">
+          <span class="path"><span class="dir">games/orbital/shaders/</span>glow.frag</span>
+          <span class="badge static">static · fragment shader (illustrative — inert in canvas2d)</span>
+        </div>
+        <div class="code-body"><pre class="code" id="code-glsl"></pre></div>
+      </div>
+
+    </div>
+
+    <!-- Graph drawer -->
+    <div id="drawer">
+      <div class="head" id="drawer-head">
+        <div class="left">
+          <span class="chev">&rsaquo;</span>
+          <span>show source</span>
+          <span class="fmt">graph-json/v1</span>
+          <span class="badge">truth (not a file)</span>
+        </div>
+        <span class="ver" id="drawer-ver">version 1</span>
+      </div>
+      <div class="body"><pre id="drawer-src">{}</pre></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+"use strict";
+
+// ---------------------------------------------------------------------------
+// MiniEngine — same shape as poc-07's FrostEngine, in pure JS.
+// ---------------------------------------------------------------------------
+
+class MiniEngine {
+  constructor() { this.entities = new Map(); this.order = []; this.t = 0; }
+  addEntity(id) {
+    if (this.entities.has(id)) return;
+    this.entities.set(id, { id, x:0, y:0, z:0, sx:1, sy:1, sz:1, color:"#fff", update:null });
+    this.order.push(id);
+  }
+  setPosition(id, x, y, z) { const e = this.entities.get(id); if (e) { e.x=x; e.y=y; e.z=z; } }
+  setScale(id, sx, sy, sz) { const e = this.entities.get(id); if (e) { e.sx=sx; e.sy=sy; e.sz=sz; } }
+  setColor(id, c)          { const e = this.entities.get(id); if (e) e.color = c; }
+  attachUpdate(id, fn)     { const e = this.entities.get(id); if (e) e.update = fn; }
+  tick(dt) {
+    this.t += dt;
+    for (const id of this.order) {
+      const e = this.entities.get(id);
+      if (e && e.update) e.update(e, this.t, dt);
+    }
+  }
+  *iter() { for (const id of this.order) yield this.entities.get(id); }
+}
+
+// ---------------------------------------------------------------------------
+// Canvas 2D renderer
+// ---------------------------------------------------------------------------
+
+class CanvasRenderer {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext("2d");
+    this.w = canvas.width; this.h = canvas.height;
+    this.cx = this.w/2; this.cy = this.h/2;
+    this.scale = 38;
+  }
+  clear() {
+    const { ctx, w, h } = this;
+    const grd = ctx.createRadialGradient(this.cx, this.cy, 40, this.cx, this.cy, Math.max(w,h));
+    grd.addColorStop(0, "#161b22"); grd.addColorStop(1, "#0a0c10");
+    ctx.fillStyle = grd; ctx.fillRect(0,0,w,h);
+    ctx.strokeStyle = "rgba(255,255,255,0.04)"; ctx.lineWidth = 1;
+    for (let x = (this.cx % 32); x < w; x += 32) { ctx.beginPath(); ctx.moveTo(x+0.5, 0); ctx.lineTo(x+0.5, h); ctx.stroke(); }
+    for (let y = (this.cy % 32); y < h; y += 32) { ctx.beginPath(); ctx.moveTo(0, y+0.5); ctx.lineTo(w, y+0.5); ctx.stroke(); }
+  }
+  ring(r) {
+    const { ctx } = this;
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,255,255,0.08)";
+    ctx.setLineDash([4,6]); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(this.cx, this.cy, r*this.scale, 0, Math.PI*2); ctx.stroke();
+    ctx.restore();
+  }
+  drawEntity(e, opts={}) {
+    const { ctx } = this;
+    const sx = this.cx + e.x*this.scale;
+    const sy = this.cy + e.z*this.scale;
+    const radius = Math.max(2, e.sx*12);
+    const glow = ctx.createRadialGradient(sx, sy, radius*0.3, sx, sy, radius*3);
+    glow.addColorStop(0, e.color); glow.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(sx, sy, radius*3, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = e.color; ctx.beginPath(); ctx.arc(sx, sy, radius, 0, Math.PI*2); ctx.fill();
+    if (opts.label) {
+      ctx.fillStyle = "rgba(220,220,220,0.55)";
+      ctx.font = "10px ui-monospace, Menlo, monospace";
+      ctx.fillText(opts.label, sx + radius + 6, sy + 3);
+    }
+  }
+}
+
+const engine = new MiniEngine();
+const renderer = new CanvasRenderer(document.getElementById("canvas"));
+
+engine.addEntity("entity:sun");
+engine.setColor("entity:sun", "#ffe66d");
+engine.setScale("entity:sun", 1.4, 1.4, 1.4);
+
+const labels = new Map([["entity:sun", "sun"]]);
+const ringRadii = new Map();
+
+// ---------- Graph mirror (truth) ----------
+const graph = {
+  version: 1,
+  nodes: [
+    { id:"scene:orbital", type:"scene",  components:{ name:"Orbital Demo (with tabs)" } },
+    { id:"script:orbit",  type:"script", components:{ language:"lua", uri:"scripts/orbit.lua" } },
+    { id:"shader:glow",   type:"shader", components:{ language:"glsl", stage:"fragment", uri:"shaders/glow.frag" } },
+    { id:"entity:sun",    type:"entity", components:{
+      transform:{ position:[0,0,0], scale:[1.4,1.4,1.4] },
+      mesh:{ shape:"sphere", color:"#ffe66d", shader:"shader:glow" },
+    }},
+  ],
+  edges: [
+    { from:"scene:orbital", to:"entity:sun", kind:"contains" },
+    { from:"entity:sun",    to:"shader:glow", kind:"uses" },
+  ],
+};
+
+const statusMeta = document.getElementById("status-meta");
+const drawerVer  = document.getElementById("drawer-ver");
+const xmlVer     = document.getElementById("xml-ver");
+
+function bump() { graph.version++; }
+function refreshAll() {
+  statusMeta.textContent = `${graph.nodes.length} nodes · ${graph.edges.length} edges · version ${graph.version}`;
+  drawerVer.textContent  = `version ${graph.version}`;
+  xmlVer.textContent     = `v${graph.version}`;
+  renderXmlPane();           // live projection
+  if (drawerEl.classList.contains("open")) renderDrawer();
+}
+function addNode(n) { graph.nodes.push(n); bump(); refreshAll(); }
+function addEdge(e) { graph.edges.push(e); bump(); refreshAll(); }
+function updateNode(id, patch) {
+  const n = graph.nodes.find(x => x.id === id);
+  if (n) n.components = { ...n.components, ...patch };
+  bump(); refreshAll();
+}
+
+// ---------- Drawer ----------
+const drawerEl   = document.getElementById("drawer");
+const drawerHead = document.getElementById("drawer-head");
+const drawerSrc  = document.getElementById("drawer-src");
+drawerHead.addEventListener("click", () => {
+  drawerEl.classList.toggle("open");
+  if (drawerEl.classList.contains("open")) renderDrawer();
+});
+function renderDrawer() { drawerSrc.textContent = JSON.stringify(graph, null, 2); }
+
+// ---------- Tab strip ----------
+const tabBtns  = document.querySelectorAll(".tab");
+const panes    = document.querySelectorAll(".pane");
+for (const btn of tabBtns) {
+  btn.addEventListener("click", () => {
+    const which = btn.dataset.tab;
+    for (const b of tabBtns) b.classList.toggle("active", b.dataset.tab === which);
+    for (const p of panes)   p.classList.toggle("active", p.dataset.pane === which);
+  });
+}
+
+// ---------- File projections ----------
+
+function esc(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function colorXml(s) {
+  return esc(s)
+    .replace(/(&lt;\/?[\w:-]+|&lt;\?xml|\?&gt;|\/?&gt;)/g, '<span class="tag">$1</span>')
+    .replace(/(\b[\w-]+)=&quot;([^&]*)&quot;/g, '<span class="attr">$1</span>=<span class="str">&quot;$2&quot;</span>')
+    .replace(/(\b[\w-]+)="([^"]*)"/g,           '<span class="attr">$1</span>=<span class="str">"$2"</span>');
+}
+function colorLua(s) {
+  return esc(s)
+    .replace(/(--[^\n]*)/g, '<span class="cmt">$1</span>')
+    .replace(/\b(function|local|end|return|if|then|else|elseif|do|for|while|in|or|and|not|nil|true|false)\b/g, '<span class="kw">$1</span>')
+    .replace(/("[^"]*"|'[^']*')/g, '<span class="str">$1</span>')
+    .replace(/\b(\d+\.?\d*)\b/g, '<span class="num">$1</span>');
+}
+function colorGlsl(s) {
+  return esc(s)
+    .replace(/(\/\/[^\n]*)/g, '<span class="cmt">$1</span>')
+    .replace(/(#\w+[^\n]*)/g, '<span class="kw">$1</span>')
+    .replace(/\b(void|float|vec[234]|mat[234]|in|out|uniform|return|if|else|precision|highp|mediump|lowp)\b/g, '<span class="kw">$1</span>')
+    .replace(/\b(\d+\.\d+|\d+)\b/g, '<span class="num">$1</span>');
+}
+
+// scene.xml — generated from the graph each version bump.
+// This is the projection logic ADR-034 lives by: graph in, file out, every time.
+function projectSceneXml() {
+  const scene = graph.nodes.find(n => n.type === "scene");
+  if (!scene) return "";
+  const containsEdges = graph.edges.filter(e => e.from === scene.id && e.kind === "contains");
+  const out = [];
+  out.push('<?xml version="1.0" encoding="UTF-8"?>');
+  out.push('<synth version="1.0">');
+  out.push(`<scene id="${scene.id}" name="${scene.components.name || scene.id}">`);
+  out.push('  <entities>');
+  for (const e of containsEdges) {
+    const ent = graph.nodes.find(n => n.id === e.to);
+    if (!ent) continue;
+    const c  = ent.components || {};
+    const t  = c.transform;
+    const m  = c.mesh;
+    const sp = c.scriptProps;
+    const scriptEdge = graph.edges.find(eg => eg.from === ent.id && eg.kind === "runs");
+    const scriptNode = scriptEdge && graph.nodes.find(n => n.id === scriptEdge.to);
+
+    out.push(`    <entity id="${ent.id}">`);
+    if (t) {
+      const pos = (t.position || [0,0,0]).join(",");
+      const scl = (t.scale    || [1,1,1]).join(",");
+      out.push(`      <transform position="${pos}" scale="${scl}"/>`);
+    }
+    if (m) {
+      out.push('      <components>');
+      out.push(`        <mesh shape="${m.shape || "sphere"}" color="${m.color || "#ffffff"}"${m.shader ? ` shader="${m.shader}"` : ""}/>`);
+      out.push('      </components>');
+    }
+    if (scriptNode) {
+      const uri = scriptNode.components.uri || "scripts/unknown.lua";
+      if (sp && Object.keys(sp).length) {
+        out.push(`      <script uri="${uri}">`);
+        for (const [k, v] of Object.entries(sp)) {
+          out.push(`        <property name="${k}" value="${v}"/>`);
+        }
+        out.push('      <\/script>');  // escape `/` so the HTML parser doesn't close our inline <script>
+      } else {
+        out.push(`      <script uri="${uri}"/>`);
+      }
+    }
+    out.push('    </entity>');
+  }
+  out.push('  </entities>');
+  out.push('</scene>');
+  out.push('</synth>');
+  return out.join("\n");
+}
+
+const codeXml  = document.getElementById("code-xml");
+const codeLua  = document.getElementById("code-lua");
+const codeGlsl = document.getElementById("code-glsl");
+
+function renderXmlPane() {
+  codeXml.innerHTML = colorXml(projectSceneXml());
+}
+
+// orbit.lua — static. The chat narrates per-entity scriptProps; this
+// script reads them at runtime. One file, shared by every orbiter — that
+// reuse is an *edge* (entity→script, kind="runs"), not a path.
+const ORBIT_LUA = `-- orbit.lua — shared orbiter script.
+--
+-- Reads per-entity scriptProps from frost.self.props and writes back to
+-- the engine's transform table. Every entity edged to script:orbit with
+-- kind="runs" executes this same file — the radius/speed difference is
+-- pure data, no file fork.
+
+local id = frost.self.id
+local r  = frost.self.props.radius or 1.0
+local sp = frost.self.props.speed  or 1.0
+
+function onLoad()
+    frost.log("orbit " .. id .. " r=" .. r .. " v=" .. sp)
+end
+
+function onUpdate(dt)
+    local t = frost.getTime() * sp
+    frost.setPosition(id, math.cos(t) * r, 0.0, math.sin(t) * r)
+end
+`;
+
+// glow.frag — static, illustrative. In the canvas2d POC this is inert.
+// In the wasm-backed runtime (poc-07 / f-live.html) the renderer would
+// compile and bind it via the middleware described in ADR-029.
+const GLOW_FRAG = `// glow.frag — radial glow used by the sun and planet meshes.
+//
+// Bound by component <mesh shader="shader:glow">. The shader does not
+// know about graph IDs — it consumes the per-instance uColor uniform
+// the renderer pushes per frame.
+
+#version 300 es
+precision highp float;
+
+in  vec2 vUV;
+in  vec3 vNormal;
+
+uniform float uTime;
+uniform vec3  uColor;
+
+out vec4 fragColor;
+
+void main() {
+    vec2  c     = vUV - 0.5;
+    float d     = length(c);
+    float glow  = smoothstep(0.5, 0.0, d);
+    float pulse = 0.85 + 0.15 * sin(uTime * 2.0);
+
+    vec3 base = uColor * 0.4;
+    vec3 col  = mix(base, uColor, glow * pulse);
+    fragColor = vec4(col, glow * pulse);
+}
+`;
+
+codeLua.innerHTML  = colorLua(ORBIT_LUA);
+codeGlsl.innerHTML = colorGlsl(GLOW_FRAG);
+
+// ---------- Render loop ----------
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min((now - last) / 1000, 0.1);
+  last = now;
+  engine.tick(dt);
+  renderer.clear();
+  for (const r of ringRadii.values()) renderer.ring(r);
+  for (const e of engine.iter()) renderer.drawEntity(e, { label: labels.get(e.id) });
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ---------------------------------------------------------------------------
+// Chat
+// ---------------------------------------------------------------------------
+
+const threadEl = document.getElementById("thread");
+const promptEl = document.getElementById("prompt");
+const sendEl   = document.getElementById("send");
+
+function appendMsg(who, html, extraCls = "") {
+  const wrap = document.createElement("div");
+  wrap.className = `msg ${who} ${extraCls}`.trim();
+  wrap.innerHTML = `<div class="who">${who === "you" ? "you" : "assistant"}</div><div class="body">${html}</div>`;
+  threadEl.appendChild(wrap);
+  threadEl.scrollTop = threadEl.scrollHeight;
+  return wrap;
+}
+function appendChips(items, onClick) {
+  const row = document.createElement("div");
+  row.className = "chips";
+  for (const it of items) {
+    const b = document.createElement("button");
+    b.className = "chip";
+    b.textContent = it.prompt;
+    b.onclick = () => onClick(it, row);
+    row.appendChild(b);
+  }
+  threadEl.appendChild(row);
+  threadEl.scrollTop = threadEl.scrollHeight;
+  return row;
+}
+
+function makeOrbit(r, speed) {
+  return (e, t) => {
+    const a = t * speed;
+    e.x = Math.cos(a) * r;
+    e.z = Math.sin(a) * r;
+  };
+}
+
+const steps = [
+  {
+    prompt: "add a red planet at radius 3",
+    reply:  "Added <span class=\"ref\">entity:planet-red</span> at radius 3. Flip to <span class=\"tag\">scene.xml</span> on the right — the projection just grew an <code>&lt;entity&gt;</code> block. The <span class=\"ref\">orbit.lua</span> tab didn't change: same file, shared by edge.",
+    apply() {
+      const id = "entity:planet-red";
+      engine.addEntity(id);
+      engine.setColor(id, "#ff6b6b");
+      engine.setScale(id, 0.45, 0.45, 0.45);
+      engine.attachUpdate(id, makeOrbit(3.0, 1.0));
+      labels.set(id, "planet-red · r=3");
+      ringRadii.set(id, 3.0);
+      addNode({ id, type:"entity", components:{
+        transform:{ position:[3,0,0], scale:[0.45,0.45,0.45] },
+        mesh:{ shape:"sphere", color:"#ff6b6b", shader:"shader:glow" },
+        scriptProps:{ radius:3.0, speed:1.0 },
+      }});
+      addEdge({ from:"scene:orbital", to:id, kind:"contains" });
+      addEdge({ from:id, to:"script:orbit", kind:"runs" });
+      addEdge({ from:id, to:"shader:glow", kind:"uses" });
+    },
+  },
+  {
+    prompt: "add a teal one further out, twice as fast",
+    reply:  "Added <span class=\"ref\">entity:planet-teal</span> at radius 4.5 with <span class=\"tag\">speed 2.0</span>. <code>scene.xml</code> grows; <code>orbit.lua</code> stays one file.",
+    apply() {
+      const id = "entity:planet-teal";
+      engine.addEntity(id);
+      engine.setColor(id, "#4ecdc4");
+      engine.setScale(id, 0.4, 0.4, 0.4);
+      engine.attachUpdate(id, makeOrbit(4.5, 2.0));
+      labels.set(id, "planet-teal · r=4.5");
+      ringRadii.set(id, 4.5);
+      addNode({ id, type:"entity", components:{
+        transform:{ position:[4.5,0,0], scale:[0.4,0.4,0.4] },
+        mesh:{ shape:"sphere", color:"#4ecdc4", shader:"shader:glow" },
+        scriptProps:{ radius:4.5, speed:2.0 },
+      }});
+      addEdge({ from:"scene:orbital", to:id, kind:"contains" });
+      addEdge({ from:id, to:"script:orbit", kind:"runs" });
+      addEdge({ from:id, to:"shader:glow", kind:"uses" });
+    },
+  },
+  {
+    prompt: "add a slow purple one far out",
+    reply:  "Added <span class=\"ref\">entity:planet-purple</span> at radius 7 with <span class=\"tag\">speed 0.4</span>. Three planets share one Lua file and one fragment shader — that's three edges to one script-node and three edges to one shader-node.",
+    apply() {
+      const id = "entity:planet-purple";
+      engine.addEntity(id);
+      engine.setColor(id, "#a78bfa");
+      engine.setScale(id, 0.55, 0.55, 0.55);
+      engine.attachUpdate(id, makeOrbit(7.0, 0.4));
+      labels.set(id, "planet-purple · r=7");
+      ringRadii.set(id, 7.0);
+      addNode({ id, type:"entity", components:{
+        transform:{ position:[7,0,0], scale:[0.55,0.55,0.55] },
+        mesh:{ shape:"sphere", color:"#a78bfa", shader:"shader:glow" },
+        scriptProps:{ radius:7.0, speed:0.4 },
+      }});
+      addEdge({ from:"scene:orbital", to:id, kind:"contains" });
+      addEdge({ from:id, to:"script:orbit", kind:"runs" });
+      addEdge({ from:id, to:"shader:glow", kind:"uses" });
+    },
+  },
+  {
+    prompt: "make the red one bigger",
+    reply:  "Bumped <span class=\"ref\">entity:planet-red</span> scale to <span class=\"tag\">0.9</span>. Compare <code>scene.xml</code> before/after: only that entity's transform line changed.",
+    apply() {
+      engine.setScale("entity:planet-red", 0.9, 0.9, 0.9);
+      updateNode("entity:planet-red", {
+        transform:{ position:[3,0,0], scale:[0.9,0.9,0.9] },
+        mesh:{ shape:"sphere", color:"#ff6b6b", shader:"shader:glow" },
+        scriptProps:{ radius:3.0, speed:1.0 },
+      });
+    },
+  },
+];
+
+let stepIdx = 0;
+let pendingChips = null;
+function showCurrentChips() {
+  if (pendingChips) { pendingChips.remove(); pendingChips = null; }
+  if (stepIdx >= steps.length) {
+    appendMsg("ai", "Canned walk-through finished. Free-text composer is a stub. The tabs on the right keep working — every future graph mutation re-projects <code>scene.xml</code> automatically.");
+    promptEl.placeholder = "(canned demo finished)";
+    promptEl.disabled = true;
+    sendEl.disabled = true;
+    return;
+  }
+  pendingChips = appendChips([steps[stepIdx]], runStep);
+}
+function runStep(step) {
+  if (pendingChips) { pendingChips.remove(); pendingChips = null; }
+  appendMsg("you", step.prompt);
+  const thinking = appendMsg("ai", "applying", "thinking");
+  setTimeout(() => {
+    try { step.apply(); }
+    catch (err) {
+      thinking.remove();
+      appendMsg("ai", `engine call failed: <code>${String((err && err.message) || err)}</code>`);
+      return;
+    }
+    thinking.remove();
+    appendMsg("ai", step.reply);
+    stepIdx++;
+    showCurrentChips();
+  }, 450);
+}
+
+// First render of the live xml pane
+refreshAll();
+
+appendMsg(
+  "ai",
+  `Self-hosted engine + four tabs on the right. <span class="ref">scene</span> is the live canvas; <span class="ref">scene.xml</span> is a regenerated projection of the graph; <span class="ref">orbit.lua</span> and <span class="ref">glow.frag</span> are the supporting files (one of each, shared via edges). Pick a prompt — watch the xml tab change.`,
+);
+showCurrentChips();
+
+sendEl.addEventListener("click", () => {
+  const txt = promptEl.value.trim();
+  if (!txt) return;
+  appendMsg("you", txt);
+  appendMsg("ai", "(free-text isn't wired to a model in this POC — use the suggested chip to drive an engine call)");
+  promptEl.value = "";
+});
+promptEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendEl.click(); }
+});
+promptEl.addEventListener("input", () => {
+  promptEl.style.height = "auto";
+  promptEl.style.height = Math.min(promptEl.scrollHeight, 120) + "px";
+});
+</script>

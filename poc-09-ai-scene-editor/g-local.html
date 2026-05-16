@@ -398,7 +398,7 @@ const sendEl   = document.getElementById("send");
 function appendMsg(who, html, extraCls = "") {
   const wrap = document.createElement("div");
   wrap.className = `msg ${who} ${extraCls}`.trim();
-  wrap.innerHTML = `<div class="who">${who === "you" ? "you" : "claude"}</div><div class="body">${html}</div>`;
+  wrap.innerHTML = `<div class="who">${who === "you" ? "you" : "assistant"}</div><div class="body">${html}</div>`;
   threadEl.appendChild(wrap);
   threadEl.scrollTop = threadEl.scrollHeight;
   return wrap;

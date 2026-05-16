@@ -18,6 +18,7 @@
     --green: #6ee07a;
     --coral: #ff8c66;
     --skyblue: #7ec8ff;
+    --magenta: #e879c5;
   }
 
   html, body {
@@ -66,6 +67,8 @@
   a.card.e .badge { background: var(--green); }
   a.card.f .badge { background: var(--coral); }
   a.card.g .badge { background: var(--skyblue); }
+  a.card.h .badge { background: var(--magenta); }
+  a.card.i .badge { background: var(--red); }
   a.card h2 { font-size: 14px; font-weight: 500; color: #fff; margin: 0 0 8px; }
   a.card .tagline { color: var(--dim); font-size: 11px; line-height: 1.5; margin: 0 0 14px; }
   a.card .claim { color: var(--text); font-size: 11px; line-height: 1.6; }
@@ -85,7 +88,7 @@
   poc-08 stellt die Frage <em>„wie sieht ein Editor für Cryolite aus?"</em>.
   poc-09 stellt die andere Frage: <em>„wie sieht das beste editierbare
   Zwischenformat für Mensch + AI aus, und welche UX folgt daraus?"</em>
-  Sechs Hypothesen, jede ein eigener HTML-Mock (F bootet zusätzlich das poc-07-Cryolite-Wasm; G ist dieselbe Idee voll self-hosted, läuft per Doppelklick aus dem Dateisystem).
+  Sieben Hypothesen, jede ein eigener HTML-Mock (F bootet zusätzlich das poc-07-Cryolite-Wasm; G ist dieselbe Idee voll self-hosted; H legt drei Datei-Tabs auf G und macht synth-xml als Live-Projektion sichtbar).
 </p>
 
 <section class="thesis">
@@ -128,7 +131,7 @@
 
   <a href="e-chat.html" class="card e">
     <span class="badge">E</span>
-    <h2>Chat-driven (claude.ai/design-style)</h2>
+    <h2>Chat-driven (artifact-style)</h2>
     <p class="tagline">Kein Editor. Chat links, Szene rechts. Quelltext nur in einem optionalen Drawer als Projektion des Graphs (ADR-034).</p>
     <p class="claim">Editor verschwindet, der Graph bleibt.</p>
   </a>
@@ -146,11 +149,25 @@
     <p class="tagline">Dieselbe Chat-driven UX wie F, aber ohne CDN, ohne ES-Module, ohne Wasm: eine einzige HTML-Datei mit inline JS-Mini-Engine und Canvas&nbsp;2D. Öffnet per Doppelklick via <code>file://</code>.</p>
     <p class="claim">Wenn HTTP nicht da ist, geht <code>file://</code> &mdash; gleiche Story, andere Tools.</p>
   </a>
+
+  <a href="h-tabs.html" class="card h">
+    <span class="badge">H</span>
+    <h2>Chat + file-projection tabs</h2>
+    <p class="tagline">G plus drei zusätzliche Tabs auf der rechten Seite: <code>scene.xml</code> (live re-projected aus dem Graph), <code>orbit.lua</code> (eine Datei, von allen Orbitern via <em>runs</em>-Edge geteilt), <code>glow.frag</code> (Shader). Dateien als Sicht, nicht als Speicher.</p>
+    <p class="claim">Tabs zeigen Projektionen &mdash; jeder Chat-Schritt schreibt die XML-Sicht neu, ohne dass eine Datei zur Wahrheit wird.</p>
+  </a>
+
+  <a href="i-graph.html" class="card i">
+    <span class="badge">I</span>
+    <h2>Chat + live scene graph</h2>
+    <p class="tagline">H plus eine Live-Scene-Graph-Sicht in der linken Spalte (vertikal geteilt, draggable Divider). Strukturierter Baum aus Nodes + Kanten, kollabierbar; <em>shared resources</em>-Block zeigt Edge-Reuse explizit. Hover auf Entity &rarr; Highlight im Canvas.</p>
+    <p class="claim">Graph nicht als Rohdaten-Drawer, sondern als gleichberechtigter Live-Inspektor neben dem Chat.</p>
+  </a>
 </nav>
 
 <footer>
   Statische Mocks ohne Build, ohne Runtime, ohne API-Key. Daten und
   AI-Antworten sind hartkodiert. Live-Integration mit poc-07-Cryolite
-  oder einer echten Anthropic-API ist eigene Iteration. Zurück zu
+  oder einer echten LLM-API ist eigene Iteration. Zurück zu
   <a href="../">web-assembly-playground</a>.
 </footer>

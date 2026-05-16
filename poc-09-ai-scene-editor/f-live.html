@@ -265,7 +265,7 @@
   function appendMsg(who, html, extraCls = "") {
     const wrap = document.createElement("div");
     wrap.className = `msg ${who} ${extraCls}`.trim();
-    wrap.innerHTML = `<div class="who">${who === "you" ? "you" : "claude"}</div><div class="body">${html}</div>`;
+    wrap.innerHTML = `<div class="who">${who === "you" ? "you" : "assistant"}</div><div class="body">${html}</div>`;
     threadEl.appendChild(wrap);
     threadEl.scrollTop = threadEl.scrollHeight;
     return wrap;
@@ -476,7 +476,7 @@ end`;
     if (stepIdx >= steps.length) {
       const done = document.createElement("div");
       done.className = "msg ai";
-      done.innerHTML = `<div class="who">claude</div><div class="body">That's the canned walk-through. The composer is a stub — wiring it to a real model + tool-calls is the next variant.</div>`;
+      done.innerHTML = `<div class="who">assistant</div><div class="body">That's the canned walk-through. The composer is a stub — wiring it to a real model + tool-calls is the next variant.</div>`;
       threadEl.appendChild(done);
       threadEl.scrollTop = threadEl.scrollHeight;
       promptEl.placeholder = "(canned demo finished)";
