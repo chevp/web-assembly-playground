@@ -22,7 +22,7 @@ export class OrderComponent {
     currency: 'EUR',
     items: [
       { sku: 'A', quantity: 2, unitPriceCents: 1999 },
-      { sku: 'B', quantity: 1, unitPriceCents: 4999 },
+      { sku: 'B', quantity: 1, unitPriceCents: 4999 }
     ],
   };
 
