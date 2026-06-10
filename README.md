@@ -13,6 +13,7 @@ languages and compiled to `.wasm` to compare the toolchains.
 | [poc-03-rust](poc-03-rust/) | Rust | `wasm-pack` + `wasm-bindgen` | Small binaries, no GC, best modern tooling |
 | [poc-04-swing-modernization](poc-04-swing-modernization/) | Java + Angular | TeaVM | Strategy POC: reuse Java business logic from a ~120k LOC Swing app in a new Angular client via WASM |
 | [poc-05-frost-engine-api](poc-05-frost-engine-api/) | C++ + Lua + XML | Emscripten | Frost-engine-style runtime: declarative XML scene + per-entity Lua tick scripts, no Vulkan, Canvas2D output |
+| [poc-12-embedding-rag](poc-12-embedding-rag/) | JavaScript | `@xenova/transformers` (WASM) | Local sentence embeddings in the browser; 15-doc corpus, cosine-similarity semantic search, no server |
 
 POCs 01–03 expose the same surface (`add(i32, i32) -> i32`) and ship a minimal
 `web/index.html` that loads the module and prints `add(2, 3) = 5`. POC 04

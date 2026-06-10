@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>poc-12 — Embedding RAG</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header>
+    <h1>poc-12 — Embedding RAG</h1>
+    <div class="model-badge">Xenova/all-MiniLM-L6-v2</div>
+    <div class="status-dot loading" id="status-dot"></div>
+    <span class="status-text" id="status-text">Initializing…</span>
+    <div class="progress-bar" id="progress-bar" style="display:none">
+      <div class="progress-bar-fill" id="progress-fill" style="width:0%"></div>
+    </div>
+  </header>
+
+  <div class="search-bar">
+    <div class="search-row">
+      <input
+        id="search-input"
+        type="text"
+        placeholder="Ask anything — semantic search, not keyword matching…"
+        disabled
+      />
+      <button id="search-btn" disabled>Search</button>
+    </div>
+    <div class="examples">
+      <span>Try:</span>
+      <button class="example-btn" data-query="how do programs track file history">file history</button>
+      <button class="example-btn" data-query="isolating apps from each other">app isolation</button>
+      <button class="example-btn" data-query="making plants grow using sunlight">plants &amp; sun</button>
+      <button class="example-btn" data-query="gravity so strong light cannot escape">trapping gravity</button>
+      <button class="example-btn" data-query="prevent memory crashes at compile time">memory safety</button>
+      <button class="example-btn" data-query="minimize error and tune model parameters">model tuning</button>
+    </div>
+  </div>
+
+  <main>
+    <div class="panel" id="results-panel">
+      <div class="empty-state">
+        Model loading…<br>
+        Once ready, type a query or click an example above.
+      </div>
+    </div>
+    <div class="panel corpus-panel-outer" id="corpus-panel">
+      <!-- rendered by app.js -->
+    </div>
+  </main>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
